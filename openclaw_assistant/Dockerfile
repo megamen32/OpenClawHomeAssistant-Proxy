@@ -1,11 +1,11 @@
-ARG BUILD_FROM=ghcr.io/hassio-addons/base:14.0.2
+ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-# Base image is Alpine (HA add-ons base). It may only provide Node 18.x.
-# OpenClaw requires Node 20+, so we install a Node 20 musl build directly.
-ARG NODE_VERSION=22.12.0
+# Base image is Debian Bookworm (glibc). This avoids musl-related native module issues
+# that occur on Alpine (e.g. clipboard, node-llama-cpp).
 
-RUN apk add --no-cache \
+# Install base packages (without nodejs/npm - we'll get Node 22 from NodeSource)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     git \
     openssh-client \
@@ -14,37 +14,31 @@ RUN apk add --no-cache \
     jq \
     curl \
     tar \
-    xz \
-    libstdc++ \
-    libgcc \
-    libatomic \
+    xz-utils \
     file \
-    pax-utils \
     python3 \
     nginx \
-    ttyd
+    gnupg \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 22+ (musl build) from unofficial builds.
-# Router/base image Alpine may ship an older libstdc++; we pull a newer libstdc++ from edge to satisfy Node's C++ symbols.
-RUN set -eu; \
-  arch=$(uname -m); \
-  if [ "$arch" != "x86_64" ]; then echo "Unsupported arch: $arch"; exit 1; fi; \
-  url="https://unofficial-builds.nodejs.org/download/release/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64-musl.tar.xz"; \
-  echo "Downloading Node.js $NODE_VERSION (musl) from $url"; \
-  curl -fsSL "$url" -o /tmp/node.tar.xz; \
-  mkdir -p /usr/local; \
-  tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1; \
-  rm -f /tmp/node.tar.xz; \
-  echo "Upgrading libstdc++/libgcc/libatomic from Alpine edge for Node compatibility"; \
-  apk add --no-cache --upgrade \
-    --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
-    --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
-    libstdc++ libgcc libatomic; \
-  /usr/local/bin/node -v; /usr/local/bin/npm -v
+# Install Node.js 22 LTS from NodeSource (Debian Bookworm ships Node 18, but OpenClaw requires 20+)
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+ && apt-get install -y nodejs \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
+
+# Install ttyd (web terminal) - not in Debian repos, download binary
+ARG TARGETARCH
+RUN ARCH=$(echo ${TARGETARCH:-$(dpkg --print-architecture)} | sed 's/aarch64/arm64/;s/armv7/armhf/;s/amd64/x86_64/') \
+ && curl -fsSL "https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.${ARCH}" -o /usr/local/bin/ttyd \
+ && chmod +x /usr/local/bin/ttyd
+
+RUN node -v && npm -v
 
 # Install OpenClaw globally
 RUN npm config set fund false && npm config set audit false \
- && npm install -g openclaw@2026.1.29
+ && npm install -g openclaw@2026.1.30
 
 COPY run.sh /run.sh
 COPY nginx.conf.tpl /etc/nginx/nginx.conf.tpl
