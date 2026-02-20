@@ -3,6 +3,8 @@
 ## [Join our Discord Server!](https://discord.gg/Nx4H3XmY)
 ![OpenClaw Assistant](https://github.com/techartdev/OpenClawHomeAssistant/blob/main/oca_addon.png?raw=true)
 
+### OpenClaw Home Assistant integration is available now!  https://github.com/techartdev/OpenClawHomeAssistantIntegration
+
 This repository contains a Home Assistant add-on that runs **OpenClaw** inside **Home Assistant OS (HAOS)**.
 
 > Upstream rename history (FYI): clawdbot → moltbot → **openclaw** (final).
