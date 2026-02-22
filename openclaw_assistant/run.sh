@@ -347,6 +347,20 @@ else
   echo "INFO: Run 'openclaw onboard' first, then restart the add-on"
 fi
 
+# ------------------------------------------------------------------------------
+# Proxy shim for undici/OpenClaw startup
+# Keep official OpenClaw npm release while enabling HTTP(S)_PROXY support.
+# ------------------------------------------------------------------------------
+OPENCLAW_GLOBAL_NODE_MODULES="$(HOME=/root npm root -g 2>/dev/null || true)"
+if [ -f /usr/local/lib/openclaw-proxy-shim.cjs ]; then
+  if [ -n "${NODE_OPTIONS:-}" ]; then
+    export NODE_OPTIONS="--require /usr/local/lib/openclaw-proxy-shim.cjs ${NODE_OPTIONS}"
+  else
+    export NODE_OPTIONS="--require /usr/local/lib/openclaw-proxy-shim.cjs"
+  fi
+  export OPENCLAW_GLOBAL_NODE_MODULES
+fi
+
 echo "Starting OpenClaw Assistant gateway (openclaw)..."
 openclaw gateway run &
 GW_PID=$!

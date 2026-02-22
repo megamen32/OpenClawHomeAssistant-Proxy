@@ -7,6 +7,7 @@ All notable changes to the OpenClaw Assistant Home Assistant Add-on will be docu
 ### Changed
 - Bump OpenClaw to 2026.2.21-2.
 - Add Home Assistant `share` and `media` mounts to the add-on (`map: share:rw, media:rw`).
+- Keep official OpenClaw npm release and add startup proxy shim for `HTTP_PROXY/HTTPS_PROXY` support in undici fetch.
 
 ## [0.5.47] - 2026-02-21
 
