@@ -217,7 +217,7 @@ All options are set via **Settings → Apps/Add-ons → OpenClaw Assistant → C
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `homeassistant_token` | string | _(empty)_ | Optional HA long-lived access token (use at own risk, can be very unsecure but very powerful). Saved to `/config/secrets/homeassistant.token` for use by scripts/skills |
-| `http_proxy` | string | _(empty)_ | Optional outbound proxy URL for HTTP/HTTPS requests from OpenClaw and Node tools. Example: `http://192.168.2.1:3128` |
+| `http_proxy` | string | _(empty)_ | Optional outbound proxy URL for HTTP/HTTPS requests from OpenClaw and Node tools. Example: `http://192.168.2.1:3128`. When set, the add-on also applies `NO_PROXY/no_proxy` defaults for localhost and private network ranges. |
 
 ### Router SSH
 
@@ -616,6 +616,8 @@ If Telegram is configured but polling fails with network fetch errors:
 2. Restart the add-on after changing configuration.
 3. Check logs for `INFO: Outbound HTTP/HTTPS proxy enabled from add-on configuration.`
 4. If you see `WARN: Invalid http_proxy value`, fix the URL format and restart.
+5. Local traffic bypass is applied automatically via `NO_PROXY/no_proxy` defaults:
+   `localhost,127.0.0.1,::1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,.local`
 
 ### Skills disappearing after update
 

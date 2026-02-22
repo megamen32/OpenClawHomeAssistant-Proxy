@@ -62,11 +62,17 @@ set +x
 # If set, apply it to both HTTP and HTTPS for Node/undici/OpenClaw tooling.
 if [ -n "$ADDON_HTTP_PROXY" ]; then
   if [[ "$ADDON_HTTP_PROXY" =~ ^https?://[^[:space:]]+$ ]]; then
+    # Keep local traffic direct to avoid accidental proxying of loopback/LAN services.
+    DEFAULT_NO_PROXY="localhost,127.0.0.1,::1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,.local"
+
     export HTTP_PROXY="$ADDON_HTTP_PROXY"
     export HTTPS_PROXY="$ADDON_HTTP_PROXY"
     export http_proxy="$ADDON_HTTP_PROXY"
     export https_proxy="$ADDON_HTTP_PROXY"
+    export NO_PROXY="${NO_PROXY:+${NO_PROXY},}${DEFAULT_NO_PROXY}"
+    export no_proxy="${no_proxy:+${no_proxy},}${DEFAULT_NO_PROXY}"
     echo "INFO: Outbound HTTP/HTTPS proxy enabled from add-on configuration."
+    echo "INFO: Applied NO_PROXY defaults for localhost/private network ranges."
   else
     echo "WARN: Invalid http_proxy value in add-on options; expected URL like http://host:port"
   fi
