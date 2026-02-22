@@ -20,6 +20,7 @@ fi
 TZNAME=$(jq -r '.timezone // "Europe/Sofia"' "$OPTIONS_FILE")
 GW_PUBLIC_URL=$(jq -r '.gateway_public_url // empty' "$OPTIONS_FILE")
 HA_TOKEN=$(jq -r '.homeassistant_token // empty' "$OPTIONS_FILE")
+ADDON_HTTP_PROXY=$(jq -r '.http_proxy // empty' "$OPTIONS_FILE")
 ENABLE_TERMINAL=$(jq -r '.enable_terminal // true' "$OPTIONS_FILE")
 TERMINAL_PORT_RAW=$(jq -r '.terminal_port // 7681' "$OPTIONS_FILE")
 
@@ -56,6 +57,20 @@ export TZ="$TZNAME"
 
 # Reduce risk of secrets ending up in logs
 set +x
+
+# Optional outbound proxy from add-on settings.
+# If set, apply it to both HTTP and HTTPS for Node/undici/OpenClaw tooling.
+if [ -n "$ADDON_HTTP_PROXY" ]; then
+  if [[ "$ADDON_HTTP_PROXY" =~ ^https?://[^[:space:]]+$ ]]; then
+    export HTTP_PROXY="$ADDON_HTTP_PROXY"
+    export HTTPS_PROXY="$ADDON_HTTP_PROXY"
+    export http_proxy="$ADDON_HTTP_PROXY"
+    export https_proxy="$ADDON_HTTP_PROXY"
+    echo "INFO: Outbound HTTP/HTTPS proxy enabled from add-on configuration."
+  else
+    echo "WARN: Invalid http_proxy value in add-on options; expected URL like http://host:port"
+  fi
+fi
 
 # Optional network hardening/workaround: force IPv4-first DNS ordering for Node.js.
 # Helps in environments where IPv6 resolves but has no working egress.

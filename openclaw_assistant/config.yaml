@@ -41,6 +41,10 @@ options:
   # Optional: Home Assistant long-lived token (for local HA API scripts/tools)
   homeassistant_token: ""
 
+  # Optional: outbound HTTP/HTTPS proxy for OpenClaw network access.
+  # Example: "http://192.168.2.1:3128"
+  http_proxy: ""
+
   # Optional: Router SSH defaults (leave empty if you don't need router automation)
   # This is a generic SSH configuration intended for a router/firewall or any network device
   # reachable from inside the HA host LAN.
@@ -91,6 +95,7 @@ schema:
   terminal_port: int(1024,65535)?
   gateway_public_url: str?
   homeassistant_token: str?
+  http_proxy: str?
 
   router_ssh_host: str
   router_ssh_user: str
@@ -104,4 +109,3 @@ schema:
   enable_openai_api: bool?
   allow_insecure_auth: bool?
   force_ipv4_dns: bool?
-
