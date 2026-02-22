@@ -22,6 +22,8 @@ panel_icon: mdi:robot
 
 map:
   - addon_config:rw
+  - share:rw
+  - media:rw
 options:
   timezone: "Europe/Sofia"
 
