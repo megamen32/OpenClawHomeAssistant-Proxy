@@ -100,7 +100,7 @@ RUN if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then \
     fi
 USER root
 
-# Install OpenClaw globally
+# Install OpenClaw globally (official npm release)
 RUN npm config set fund false && npm config set audit false \
  && npm install -g openclaw@2026.2.21-2
 
@@ -124,6 +124,7 @@ fi
 EOF
 COPY run.sh /run.sh
 COPY oc_config_helper.py /oc_config_helper.py
+COPY openclaw-proxy-shim.cjs /usr/local/lib/openclaw-proxy-shim.cjs
 COPY nginx.conf.tpl /etc/nginx/nginx.conf.tpl
 COPY landing.html.tpl /etc/nginx/landing.html.tpl
 RUN chmod +x /run.sh /oc_config_helper.py \

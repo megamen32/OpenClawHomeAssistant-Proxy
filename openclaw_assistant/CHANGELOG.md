@@ -2,11 +2,22 @@
 
 All notable changes to the OpenClaw Assistant Home Assistant Add-on will be documented in this file.
 
+## [0.5.49] - 2026-02-22
+
+### Added
+- New add-on option `http_proxy` for configuring outbound HTTP/HTTPS proxy from Home Assistant settings.
+
+### Changed
+- Export `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy`, and `https_proxy` from add-on config at startup.
+- Add translations for the new `http_proxy` option.
+- Document proxy configuration in README and DOCS.
+
 ## [0.5.48] - 2026-02-22
 
 ### Changed
 - Bump OpenClaw to 2026.2.21-2.
 - Add Home Assistant `share` and `media` mounts to the add-on (`map: share:rw, media:rw`).
+- Keep official OpenClaw npm release and add startup proxy shim for `HTTP_PROXY/HTTPS_PROXY` support in undici fetch.
 
 ## [0.5.47] - 2026-02-21
 
