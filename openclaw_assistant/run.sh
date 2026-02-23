@@ -256,7 +256,7 @@ try_export_gateway_env_var() {
   fi
 
   export "$key=$value"
-  ((env_count++))
+  env_count=$((env_count + 1))
   echo "INFO: Exported gateway env var: $key"
 }
 
