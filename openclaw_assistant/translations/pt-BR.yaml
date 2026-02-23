@@ -66,3 +66,7 @@ configuration:
   force_ipv4_dns:
     name: Forçar ordem DNS IPv4
     description: Força a ordem de DNS com prioridade para IPv4 nas chamadas de rede do Node. Útil quando o DNS IPv6 resolve, mas o roteamento IPv6 para a internet está quebrado (pode afetar o polling da API do Telegram).
+
+  gateway_env_vars:
+    name: Variáveis de Ambiente do Gateway
+    description: Variáveis de ambiente passadas para o processo do gateway OpenClaw na inicialização (definidas como um mapa YAML; máximo de 50 variáveis, chaves com até 255 caracteres, valores com até 10.000 caracteres).

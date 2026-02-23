@@ -66,3 +66,7 @@ configuration:
   force_ipv4_dns:
     name: Wymuś kolejność DNS IPv4
     description: Wymusza preferowanie IPv4 przy rozwiązywaniu DNS dla wywołań sieciowych Node. Przydatne, gdy DNS IPv6 się rozwiązuje, ale routing IPv6 do Internetu nie działa (może wpływać na polling API Telegrama).
+
+  gateway_env_vars:
+    name: Zmienne środowiskowe gateway
+    description: Zmienne środowiskowe przekazywane do procesu gateway OpenClaw podczas uruchamiania (zdefiniowane jako mapa YAML; maks. 50 zmiennych, klucze do 255 znaków, wartości do 10000 znaków).
