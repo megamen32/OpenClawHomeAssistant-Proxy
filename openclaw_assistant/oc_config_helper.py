@@ -64,7 +64,8 @@ def set_gateway_setting(key, value):
 
 def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_api: bool, allow_insecure_auth: bool, env_vars: str = "{}"):
     """
-    Apply gateway settings and environment variables to OpenClaw config.
+    Apply gateway settings to OpenClaw config.
+    Environment variables are handled separately via run.sh and do not need to be saved to config.
     
     Args:
         mode: "local" or "remote"
@@ -72,8 +73,8 @@ def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_a
         port: Port number to listen on (must be 1-65535)
         enable_openai_api: Enable OpenAI-compatible Chat Completions endpoint
         allow_insecure_auth: Allow insecure HTTP authentication
-        env_vars: JSON string with environment variables as key-value pairs (e.g., '{"VAR1":"value1","VAR2":"value2"}')
-                 These are stored in cfg["env"]["vars"] and exported to the gateway process
+        env_vars: JSON string with environment variables (not saved to config, just validated)
+                 These are exported to the gateway process by run.sh
     """
     # Validate gateway mode
     if mode not in ["local", "remote"]:
@@ -114,24 +115,11 @@ def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_a
     control_ui = gateway["controlUi"]
     chat_completions = gateway["http"]["endpoints"]["chatCompletions"]
     
-    # Ensure env structure exists at root level
-    if "env" not in cfg:
-        cfg["env"] = {
-            "shellEnv": {
-                "enabled": True
-            },
-            "vars": {}
-        }
-    
-    if "vars" not in cfg["env"]:
-        cfg["env"]["vars"] = {}
-    
     current_mode = gateway.get("mode", "")
     current_bind = gateway.get("bind", "")
     current_port = gateway.get("port", 18789)
     current_openai_api = chat_completions.get("enabled", False)
     current_insecure = control_ui.get("allowInsecureAuth", False)
-    current_env_vars = cfg["env"]["vars"]
     
     changes = []
     
@@ -199,13 +187,10 @@ def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_a
             print(f"ERROR: Failed to process environment variables: {e}")
             return False
     
-    if new_env_vars != current_env_vars:
-        cfg["env"]["vars"] = new_env_vars
-        if new_env_vars:
-            var_names = ', '.join(sorted(new_env_vars.keys()))
-            changes.append(f"env.vars: {var_names}")
-        else:
-            changes.append("env.vars: cleared")
+    # Log validated environment variables (not saved to config, handled by run.sh)
+    if new_env_vars:
+        var_names = ', '.join(sorted(new_env_vars.keys()))
+        print(f"INFO: Environment variables validated (will be exported by run.sh): {var_names}")
     
     if changes:
         if write_config(cfg):
@@ -215,7 +200,7 @@ def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_a
             print("ERROR: Failed to write config")
             return False
     else:
-        print(f"INFO: Gateway settings already correct (mode={mode}, bind={bind_mode}, port={port}, chatCompletions={enable_openai_api}, allowInsecureAuth={allow_insecure_auth}, env vars={len(current_env_vars)})")
+        print(f"INFO: Gateway settings already correct (mode={mode}, bind={bind_mode}, port={port}, chatCompletions={enable_openai_api}, allowInsecureAuth={allow_insecure_auth})")
         return True
 
 
