@@ -2,11 +2,15 @@
 
 All notable changes to the OpenClaw Assistant Home Assistant Add-on will be documented in this file.
 
+## [0.5.52] - 2026-02-24
+
+### Added
+- New add-on option `gateway_env_vars` that accepts a YAML map and safely injects values into the gateway process at startup (max 50 vars, key ≤255 chars, value ≤10000 chars).
+
 ## [0.5.51] - 2026-02-23
 
 ### Fixed
 - **`web_fetch failed: fetch failed`**: changed `force_ipv4_dns` default to **true**. Node 22 tries IPv6 first; most HAOS VMs lack IPv6 egress, causing outbound `web_fetch` / HTTP tool calls to time out.
-- **`gateway_env_vars` safety**: block overrides for reserved runtime variables (for example `PATH`, `HOME`, `NODE_OPTIONS`, `NODE_PATH`, `OPENCLAW_*`, proxy vars) to prevent accidental startup/security regressions.
 
 ### Added
 - **`nginx_log_level` option** (`minimal` / `full`, default `minimal`): suppresses repetitive Home Assistant health-check and polling requests (`GET /`, `GET /v1/models`, `POST /tools/invoke`) from the nginx access log.
