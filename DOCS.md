@@ -341,12 +341,15 @@ When `gateway_mode` is `remote`:
 
 OpenClaw's Gateway exposes an **OpenAI-compatible Chat Completions endpoint** (`POST /v1/chat/completions`). This lets you use OpenClaw as a **conversation agent** in Home Assistant's Assist pipeline — enabling voice control, automations, and smart home commands.
 
-#### Prerequisites
+There are two ways to connect it to Home Assistant:
 
-- [HACS](https://hacs.xyz/) installed on your Home Assistant
-- [Extended OpenAI Conversation](https://github.com/jekalmin/extended_openai_conversation) integration
+---
 
-#### Step 1 — Enable the endpoint
+#### Option 1 — OpenClaw Integration (recommended)
+
+The **native OpenClaw integration** provides auto-discovery, a Lovelace chat card, voice mode, tool invocation services, and status sensors — all in one package.
+
+**Step 1 — Enable the endpoint**
 
 In the add-on configuration, set `enable_openai_api`: **true**, then restart.
 
@@ -355,14 +358,72 @@ Or via terminal:
 openclaw config set gateway.http.endpoints.chatCompletions.enabled true
 ```
 
-#### Step 2 — Install Extended OpenAI Conversation
+**Step 2 — Install the OpenClaw integration**
+
+Via HACS:
+1. In HACS, add as a custom repository:
+   - Repository: `https://github.com/techartdev/OpenClawHomeAssistantIntegration`
+   - Category: **Integration**
+2. Install and restart Home Assistant
+
+Or manually: copy `custom_components/openclaw` from the repo into your HA config directory.
+
+**Step 3 — Add the integration**
+
+1. Go to **Settings → Devices & Services → Add Integration**
+2. Search for **OpenClaw**
+3. If the addon is running locally, it will be **auto-discovered** — just click Submit
+4. If connecting to a remote instance, fill in host, port, token, and SSL settings manually
+
+> **`lan_https` mode**: The integration auto-detects this and connects to the internal gateway port on loopback — no certificate setup needed for local addons.
+
+**Step 4 — Set as conversation agent**
+
+1. Go to **Settings → Voice Assistants**
+2. Edit your assistant (or create a new one)
+3. Under **Conversation agent**, select **OpenClaw**
+
+**Step 5 — Expose entities**
+
+Go to **Settings → Voice Assistants → Expose** and toggle on the entities you want OpenClaw to control.
+
+**Step 6 — Add the chat card (optional)**
+
+The integration auto-registers a Lovelace card. Add it to any dashboard:
+```yaml
+type: custom:openclaw-chat-card
+```
+
+The card includes message history, typing indicator, voice input, wake-word support, and TTS responses.
+
+> **Works with standalone OpenClaw too.** The integration doesn't require the HA addon — it connects to any reachable OpenClaw gateway over HTTP/HTTPS. See the [integration README](https://github.com/techartdev/OpenClawHomeAssistantIntegration) for remote connection details.
+
+---
+
+#### Option 2 — Extended OpenAI Conversation (alternative)
+
+If you prefer to use the [Extended OpenAI Conversation](https://github.com/jekalmin/extended_openai_conversation) integration instead:
+
+**Prerequisites:**
+- [HACS](https://hacs.xyz/) installed on your Home Assistant
+
+**Step 1 — Enable the endpoint**
+
+In the add-on configuration, set `enable_openai_api`: **true**, then restart.
+
+Or via terminal:
+```sh
+openclaw config set gateway.http.endpoints.chatCompletions.enabled true
+```
+
+**Step 2 — Install Extended OpenAI Conversation**
 
 1. In HACS, add as a custom repository:
    - Repository: `https://github.com/jekalmin/extended_openai_conversation`
    - Category: **Integration**
 2. Install and restart Home Assistant
 
-#### Step 3 — Configure the integration
+**Step 3 — Configure the integration**
 
 1. Go to **Settings → Devices & Services → Add Integration**
 2. Search for **Extended OpenAI Conversation**
@@ -375,13 +436,13 @@ openclaw config set gateway.http.endpoints.chatCompletions.enabled true
 
 > If using `gateway_bind_mode: lan`, you can also use `http://<your-ha-ip>:18789/v1` — this allows other HA instances on your network to connect too.
 
-#### Step 4 — Set as conversation agent
+**Step 4 — Set as conversation agent**
 
 1. Go to **Settings → Voice Assistants**
 2. Edit your assistant (or create a new one)
 3. Under **Conversation agent**, select **Extended OpenAI Conversation**
 
-#### Step 5 — Expose entities
+**Step 5 — Expose entities**
 
 Go to **Settings → Voice Assistants → Expose** and toggle on the entities you want OpenClaw to control.
 
@@ -849,7 +910,7 @@ Yes. Set `gateway_mode` to `remote` and configure the remote gateway URL via `op
 Run `openclaw configure` in the terminal to reconfigure your AI providers, or edit `/config/.openclaw/openclaw.json` directly. You can use OpenAI, Google (Gemini), Anthropic (Claude), local models, and more.
 
 **Can other devices on my network use the OpenClaw API?**
-Yes. Set `access_mode` to `lan_https` (recommended) or `lan_reverse_proxy`. Any device on your network can connect to `https://<ha-ip>:18789`. Use the gateway token for authentication. This also enables the [Assist pipeline integration](#6c-assist-pipeline-integration-openai-api) from other HA instances.
+Yes. Set `access_mode` to `lan_https` (recommended) or `lan_reverse_proxy`. Any device on your network can connect to `https://<ha-ip>:18789`. Use the gateway token for authentication. This also enables the [Assist pipeline integration](#6c-assist-pipeline-integration-openai-api) from other HA instances or standalone OpenClaw integrations.
 
 **Where is my data stored on the host?**
 The add-on's `/config/` directory maps to `/addon_configs/<slug>/` on the Home Assistant host. This is included in HA backups automatically.
