@@ -400,7 +400,7 @@ fi
 
 if [ -f "$OPENCLAW_CONFIG_PATH" ]; then
   if [ -f "$HELPER_PATH" ]; then
-    if ! python3 "$HELPER_PATH" apply-gateway-settings "$GATEWAY_MODE" "$GATEWAY_BIND_MODE" "$GATEWAY_PORT" "$ENABLE_OPENAI_API" "$ALLOW_INSECURE_AUTH" "$GW_ENV_VARS"; then
+    if ! python3 "$HELPER_PATH" apply-gateway-settings "$GATEWAY_MODE" "$GATEWAY_BIND_MODE" "$GATEWAY_PORT" "$ENABLE_OPENAI_API" "$ALLOW_INSECURE_AUTH"; then
       rc=$?
       echo "ERROR: Failed to apply gateway settings via oc_config_helper.py (exit code ${rc})."
       echo "ERROR: Gateway configuration may be incorrect; aborting startup."

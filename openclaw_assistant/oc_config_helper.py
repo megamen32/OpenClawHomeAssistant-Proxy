@@ -12,11 +12,6 @@ from pathlib import Path
 
 CONFIG_PATH = Path(os.environ.get("OPENCLAW_CONFIG_PATH", "/config/.openclaw/openclaw.json"))
 
-# Limits for environment variable handling
-MAX_ENV_VARS = 50
-MAX_ENV_VAR_NAME_SIZE = 255
-MAX_ENV_VAR_VALUE_SIZE = 10000
-
 
 
 def read_config():
@@ -62,10 +57,9 @@ def set_gateway_setting(key, value):
     return write_config(cfg)
 
 
-def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_api: bool, allow_insecure_auth: bool, env_vars: str = "{}"):
+def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_api: bool, allow_insecure_auth: bool):
     """
     Apply gateway settings to OpenClaw config.
-    Environment variables are handled separately via run.sh and do not need to be saved to config.
     
     Args:
         mode: "local" or "remote"
@@ -73,8 +67,6 @@ def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_a
         port: Port number to listen on (must be 1-65535)
         enable_openai_api: Enable OpenAI-compatible Chat Completions endpoint
         allow_insecure_auth: Allow insecure HTTP authentication
-        env_vars: JSON string with environment variables (not saved to config, just validated)
-                 These are exported to the gateway process by run.sh
     """
     # Validate gateway mode
     if mode not in ["local", "remote"]:
@@ -143,55 +135,6 @@ def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_a
         control_ui["allowInsecureAuth"] = allow_insecure_auth
         changes.append(f"allowInsecureAuth: {current_insecure} -> {allow_insecure_auth}")
     
-    # Parse and apply environment variables from JSON
-    new_env_vars = {}
-    if env_vars.strip() and env_vars != "{}":
-        try:
-            # Parse JSON object containing environment variables
-            parsed = json.loads(env_vars)
-            if not isinstance(parsed, dict):
-                print(f"ERROR: Environment variables must be a JSON object (dict), got {type(parsed).__name__}")
-                return False
-            
-            for key, value in parsed.items():
-                # Ensure value is string
-                if not isinstance(value, str):
-                    value = str(value)
-                
-                # Validate key format
-                if not key:
-                    print(f"WARN: Invalid env var key (empty)")
-                    continue
-                if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', key):
-                    print(f"WARN: Invalid env var name '{key}' (must start with letter/underscore)")
-                    continue
-                
-                # Enforce size limits
-                if len(key) > MAX_ENV_VAR_NAME_SIZE:
-                    print(f"ERROR: Environment variable name '{key}' too long (max {MAX_ENV_VAR_NAME_SIZE} chars)")
-                    return False
-                if len(value) > MAX_ENV_VAR_VALUE_SIZE:
-                    print(f"ERROR: Environment variable '{key}' value too large (max {MAX_ENV_VAR_VALUE_SIZE} chars)")
-                    return False
-                
-                new_env_vars[key] = value
-            
-            # Enforce limit on total variables
-            if len(new_env_vars) > MAX_ENV_VARS:
-                print(f"ERROR: Too many environment variables ({len(new_env_vars)}), max {MAX_ENV_VARS}")
-                return False
-        except json.JSONDecodeError as e:
-            print(f"ERROR: Failed to parse environment variables JSON: {e}")
-            return False
-        except Exception as e:
-            print(f"ERROR: Failed to process environment variables: {e}")
-            return False
-    
-    # Log validated environment variables (not saved to config, handled by run.sh)
-    if new_env_vars:
-        var_names = ', '.join(sorted(new_env_vars.keys()))
-        print(f"INFO: Environment variables validated (will be exported by run.sh): {var_names}")
-    
     if changes:
         if write_config(cfg):
             print(f"INFO: Updated gateway settings: {', '.join(changes)}")
@@ -213,16 +156,15 @@ def main():
     cmd = sys.argv[1]
     
     if cmd == "apply-gateway-settings":
-        if len(sys.argv) < 7:
-            print("Usage: oc_config_helper.py apply-gateway-settings <local|remote> <auto|loopback|lan|tailnet> <port> <enable_openai_api:true|false> <allow_insecure:true|false> [env_vars_json]")
+        if len(sys.argv) != 7:
+            print("Usage: oc_config_helper.py apply-gateway-settings <local|remote> <auto|loopback|lan|tailnet> <port> <enable_openai_api:true|false> <allow_insecure:true|false>")
             sys.exit(1)
         mode = sys.argv[2]
         bind_mode = sys.argv[3]
         port = int(sys.argv[4])
         enable_openai_api = sys.argv[5].lower() == "true"
         allow_insecure_auth = sys.argv[6].lower() == "true"
-        env_vars = sys.argv[7] if len(sys.argv) > 7 else "{}"
-        success = apply_gateway_settings(mode, bind_mode, port, enable_openai_api, allow_insecure_auth, env_vars)
+        success = apply_gateway_settings(mode, bind_mode, port, enable_openai_api, allow_insecure_auth)
         sys.exit(0 if success else 1)
     
     elif cmd == "get":
