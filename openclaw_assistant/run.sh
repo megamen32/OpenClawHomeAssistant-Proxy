@@ -50,11 +50,53 @@ GATEWAY_MODE=$(jq -r '.gateway_mode // "local"' "$OPTIONS_FILE")
 GATEWAY_BIND_MODE=$(jq -r '.gateway_bind_mode // "loopback"' "$OPTIONS_FILE")
 GATEWAY_PORT=$(jq -r '.gateway_port // 18789' "$OPTIONS_FILE")
 ENABLE_OPENAI_API=$(jq -r '.enable_openai_api // false' "$OPTIONS_FILE")
-ALLOW_INSECURE_AUTH=$(jq -r '.allow_insecure_auth // false' "$OPTIONS_FILE")
-FORCE_IPV4_DNS=$(jq -r '.force_ipv4_dns // false' "$OPTIONS_FILE")
+GATEWAY_AUTH_MODE=$(jq -r '.gateway_auth_mode // "token"' "$OPTIONS_FILE")
+GATEWAY_TRUSTED_PROXIES=$(jq -r '.gateway_trusted_proxies // empty' "$OPTIONS_FILE")
+FORCE_IPV4_DNS=$(jq -r '.force_ipv4_dns // true' "$OPTIONS_FILE")
+ACCESS_MODE=$(jq -r '.access_mode // "custom"' "$OPTIONS_FILE")
+NGINX_LOG_LEVEL=$(jq -r '.nginx_log_level // "minimal"' "$OPTIONS_FILE")
 GW_ENV_VARS=$(jq -c '.gateway_env_vars // {}' "$OPTIONS_FILE")
 
 export TZ="$TZNAME"
+
+# ------------------------------------------------------------------------------
+# Access mode presets — override individual gateway settings for common scenarios
+# ------------------------------------------------------------------------------
+ENABLE_HTTPS_PROXY=false
+GATEWAY_INTERNAL_PORT="$GATEWAY_PORT"
+
+case "$ACCESS_MODE" in
+  local_only)
+    GATEWAY_BIND_MODE="loopback"
+    GATEWAY_AUTH_MODE="token"
+    echo "INFO: Access mode: local_only (loopback + token, Ingress/terminal only)"
+    ;;
+  lan_https)
+    # Gateway binds loopback on internal port; nginx terminates TLS on the external port.
+    GATEWAY_BIND_MODE="loopback"
+    GATEWAY_AUTH_MODE="token"
+    ENABLE_HTTPS_PROXY=true
+    GATEWAY_INTERNAL_PORT=$((GATEWAY_PORT + 1))
+    echo "INFO: Access mode: lan_https (built-in HTTPS proxy on 0.0.0.0:${GATEWAY_PORT})"
+    ;;
+  lan_reverse_proxy)
+    GATEWAY_BIND_MODE="lan"
+    GATEWAY_AUTH_MODE="trusted-proxy"
+    if [ -z "$GATEWAY_TRUSTED_PROXIES" ]; then
+      echo "ERROR: access_mode=lan_reverse_proxy requires gateway_trusted_proxies to be set."
+      echo "ERROR: Set it to your reverse proxy's IP/CIDR (e.g. 127.0.0.1,192.168.88.0/24)."
+    fi
+    echo "INFO: Access mode: lan_reverse_proxy (LAN bind + trusted-proxy auth)"
+    ;;
+  tailnet_https)
+    GATEWAY_BIND_MODE="tailnet"
+    GATEWAY_AUTH_MODE="token"
+    echo "INFO: Access mode: tailnet_https (Tailscale bind + token auth)"
+    ;;
+  custom|*)
+    echo "INFO: Access mode: custom (using individual gateway_bind_mode/auth_mode settings)"
+    ;;
+esac
 
 # Reduce risk of secrets ending up in logs
 set +x
@@ -99,7 +141,7 @@ export OPENCLAW_CONFIG_DIR=/config/.openclaw
 export OPENCLAW_WORKSPACE_DIR=/config/clawd
 export XDG_CONFIG_HOME=/config
 
-mkdir -p /config/.openclaw /config/clawd /config/keys /config/secrets
+mkdir -p /config/.openclaw /config/.openclaw/identity /config/clawd /config/keys /config/secrets
 
 # ------------------------------------------------------------------------------
 # Sync built-in OpenClaw skills from image to persistent storage
@@ -407,7 +449,9 @@ fi
 
 if [ -f "$OPENCLAW_CONFIG_PATH" ]; then
   if [ -f "$HELPER_PATH" ]; then
-    if ! python3 "$HELPER_PATH" apply-gateway-settings "$GATEWAY_MODE" "$GATEWAY_BIND_MODE" "$GATEWAY_PORT" "$ENABLE_OPENAI_API" "$ALLOW_INSECURE_AUTH"; then
+    # In lan_https mode the gateway uses an internal port; nginx owns the external one.
+    EFFECTIVE_GW_PORT="$GATEWAY_INTERNAL_PORT"
+    if ! python3 "$HELPER_PATH" apply-gateway-settings "$GATEWAY_MODE" "$GATEWAY_BIND_MODE" "$EFFECTIVE_GW_PORT" "$ENABLE_OPENAI_API" "$GATEWAY_AUTH_MODE" "$GATEWAY_TRUSTED_PROXIES"; then
       rc=$?
       echo "ERROR: Failed to apply gateway settings via oc_config_helper.py (exit code ${rc})."
       echo "ERROR: Gateway configuration may be incorrect; aborting startup."
@@ -420,6 +464,88 @@ if [ -f "$OPENCLAW_CONFIG_PATH" ]; then
 else
   echo "WARN: OpenClaw config not found at $OPENCLAW_CONFIG_PATH, cannot apply gateway settings"
   echo "INFO: Run 'openclaw onboard' first, then restart the add-on"
+fi
+
+# ------------------------------------------------------------------------------
+# TLS certificate generation for built-in HTTPS proxy (lan_https mode)
+# Generates a local CA + server cert so phones/tablets get proper HTTPS.
+# The CA cert can be installed once on a device for trusted access.
+# ------------------------------------------------------------------------------
+if [ "$ENABLE_HTTPS_PROXY" = "true" ]; then
+  CERT_DIR="/config/certs"
+  mkdir -p "$CERT_DIR"
+
+  # Detect primary LAN IP
+  LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+  STORED_IP=$(cat "$CERT_DIR/.cert_ip" 2>/dev/null || echo "")
+
+  # --- Local CA (generated once, persists across restarts) ---
+  if [ ! -f "$CERT_DIR/ca.key" ] || [ ! -f "$CERT_DIR/ca.crt" ]; then
+    echo "INFO: Generating local CA certificate (one-time)..."
+    openssl genrsa -out "$CERT_DIR/ca.key" 2048 2>/dev/null
+    openssl req -new -x509 -key "$CERT_DIR/ca.key" -out "$CERT_DIR/ca.crt" \
+      -days 3650 -nodes -subj "/CN=OpenClaw Local CA" 2>/dev/null
+    chmod 600 "$CERT_DIR/ca.key"
+    STORED_IP=""  # force server cert regeneration
+    echo "INFO: Local CA created at $CERT_DIR/ca.crt"
+  fi
+
+  # --- Server cert (regenerated when LAN IP changes) ---
+  if [ ! -f "$CERT_DIR/gateway.crt" ] || [ ! -f "$CERT_DIR/gateway.key" ] || [ "$LAN_IP" != "$STORED_IP" ]; then
+    echo "INFO: Generating server TLS certificate for IP: ${LAN_IP:-unknown}..."
+    openssl genrsa -out "$CERT_DIR/gateway.key" 2048 2>/dev/null
+    openssl req -new -key "$CERT_DIR/gateway.key" -out "$CERT_DIR/gateway.csr" \
+      -subj "/CN=OpenClaw Gateway" 2>/dev/null
+
+    # SAN extension — include LAN IP, loopback, and common mDNS names
+    cat > "$CERT_DIR/_san.ext" <<SANEOF
+subjectAltName=IP:${LAN_IP:-127.0.0.1},IP:127.0.0.1,DNS:localhost,DNS:homeassistant,DNS:homeassistant.local
+SANEOF
+
+    openssl x509 -req -in "$CERT_DIR/gateway.csr" \
+      -CA "$CERT_DIR/ca.crt" -CAkey "$CERT_DIR/ca.key" -CAcreateserial \
+      -out "$CERT_DIR/gateway.crt" -days 3650 \
+      -extfile "$CERT_DIR/_san.ext" 2>/dev/null
+
+    rm -f "$CERT_DIR/gateway.csr" "$CERT_DIR/_san.ext" "$CERT_DIR/ca.srl"
+    chmod 600 "$CERT_DIR/gateway.key"
+    printf '%s' "$LAN_IP" > "$CERT_DIR/.cert_ip"
+    echo "INFO: Server TLS certificate generated (SAN includes IP:${LAN_IP:-127.0.0.1})"
+  else
+    echo "INFO: Reusing existing TLS certificate (IP: $STORED_IP)"
+  fi
+
+  # Make CA cert available for download via nginx
+  mkdir -p /etc/nginx/html
+  cp "$CERT_DIR/ca.crt" /etc/nginx/html/openclaw-ca.crt 2>/dev/null || true
+  echo "INFO: CA certificate available for download at /cert/ca.crt on the HTTPS port"
+
+  # ------------------------------------------------------------------
+  # Configure gateway.controlUi for the HTTPS proxy:
+  #
+  # 1. allowedOrigins — the browser's HTTPS origin must be listed,
+  #    otherwise v2026.2.21+ rejects with 1008 "origin not allowed".
+  #
+  # 2. dangerouslyDisableDeviceAuth — skips the interactive device
+  #    pairing ceremony (1008 "pairing required").  In a self-hosted
+  #    add-on the user already controls the token, so per-device
+  #    approval adds friction without real security benefit.
+  #
+  #    NOTE: v2026.2.22+ emits a startup security warning when this
+  #    flag is active. The warning is expected and harmless for this
+  #    use case — run `openclaw security audit` for details.
+  #
+  # Also cleans up any stale keys (e.g. pairingMode) from older
+  # add-on versions that would cause "Unrecognized key" errors.
+  # ------------------------------------------------------------------
+  if [ -n "$LAN_IP" ] && [ -f "$HELPER_PATH" ] && [ -f "$OPENCLAW_CONFIG_PATH" ]; then
+    ALLOWED_ORIGINS="https://${LAN_IP}:${GATEWAY_PORT}"
+    # Also permit common mDNS/hostname variants so the cert SAN names work too
+    ALLOWED_ORIGINS="${ALLOWED_ORIGINS},https://homeassistant.local:${GATEWAY_PORT}"
+    ALLOWED_ORIGINS="${ALLOWED_ORIGINS},https://homeassistant:${GATEWAY_PORT}"
+    python3 "$HELPER_PATH" set-control-ui-origins "$ALLOWED_ORIGINS" || \
+      echo "WARN: Could not set controlUi settings — gateway may reject the Control UI"
+  fi
 fi
 
 # ------------------------------------------------------------------------------
@@ -510,40 +636,30 @@ fi
 # The gateway token is NOT managed by the add-on; OpenClaw will generate/store it.
 # Best-effort: query it via CLI (works even if openclaw.json is JSON5). If unknown, we hide the button.
 GW_TOKEN="$(timeout 2s openclaw config get gateway.auth.token 2>/dev/null | tr -d '\n' || true)"
-GW_PUBLIC_URL="$GW_PUBLIC_URL" GW_TOKEN="$GW_TOKEN" TERMINAL_PORT="$TERMINAL_PORT" python3 - <<'PY'
-import os
-from pathlib import Path
 
-tpl = Path('/etc/nginx/nginx.conf.tpl').read_text()
-landing_tpl = Path('/etc/nginx/landing.html.tpl').read_text()
-public_url = os.environ.get('GW_PUBLIC_URL','')
-terminal_port = os.environ.get('TERMINAL_PORT', '7681')
+# Collect disk usage for landing page status card
+DISK_TOTAL="" DISK_USED="" DISK_AVAIL="" DISK_PCT=""
+if df -h /config >/dev/null 2>&1; then
+  DISK_TOTAL=$(df -h /config | awk 'NR==2{print $2}')
+  DISK_USED=$(df -h /config | awk 'NR==2{print $3}')
+  DISK_AVAIL=$(df -h /config | awk 'NR==2{print $4}')
+  DISK_PCT=$(df -h /config | awk 'NR==2{print $5}')
+  echo "INFO: Disk usage: ${DISK_USED}/${DISK_TOTAL} (${DISK_PCT} used, ${DISK_AVAIL} free)"
+  # Warn early if disk is getting full
+  DISK_PCT_NUM=${DISK_PCT//%/}
+  if [ "$DISK_PCT_NUM" -ge 90 ] 2>/dev/null; then
+    echo "WARNING: Disk is ${DISK_PCT} full! Add-on updates may fail. Run 'oc-cleanup' in the terminal."
+  elif [ "$DISK_PCT_NUM" -ge 75 ] 2>/dev/null; then
+    echo "NOTICE: Disk is ${DISK_PCT} full. Consider running 'oc-cleanup' in the terminal."
+  fi
+fi
 
-# Token comes from environment (best-effort CLI query in run.sh)
-token = os.environ.get('GW_TOKEN','')
-
-gw_path = '' if public_url.endswith('/') else '/'
-
-# Replace terminal port placeholder in nginx config
-conf = tpl.replace('__TERMINAL_PORT__', terminal_port)
-Path('/etc/nginx/nginx.conf').write_text(conf)
-
-landing = landing_tpl.replace('__GATEWAY_TOKEN__', token)
-landing = landing.replace('__GATEWAY_PUBLIC_URL__', public_url)
-landing = landing.replace('__GW_PUBLIC_URL_PATH__', gw_path)
-
-out_dir = Path('/etc/nginx/html')
-out_dir.mkdir(parents=True, exist_ok=True)
-out_file = out_dir / 'index.html'
-out_file.write_text(landing)
-
-# Ensure nginx can read it even if base image uses restrictive umask/permissions.
-try:
-    out_dir.chmod(0o755)
-    out_file.chmod(0o644)
-except Exception:
-    pass
-PY
+GW_PUBLIC_URL="$GW_PUBLIC_URL" GW_TOKEN="$GW_TOKEN" TERMINAL_PORT="$TERMINAL_PORT" \
+  ENABLE_HTTPS_PROXY="$ENABLE_HTTPS_PROXY" HTTPS_PROXY_PORT="$GATEWAY_PORT" \
+  GATEWAY_INTERNAL_PORT="$GATEWAY_INTERNAL_PORT" ACCESS_MODE="$ACCESS_MODE" \
+  DISK_TOTAL="$DISK_TOTAL" DISK_USED="$DISK_USED" DISK_AVAIL="$DISK_AVAIL" DISK_PCT="$DISK_PCT" \
+  NGINX_LOG_LEVEL="$NGINX_LOG_LEVEL" \
+  python3 /render_nginx.py
 
 echo "Starting ingress proxy (nginx) on :48099 ..."
 nginx -g 'daemon off;' &
