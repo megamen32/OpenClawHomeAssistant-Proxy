@@ -1,8 +1,14 @@
 blank_issues_enabled: false
 contact_links:
-  - name: OpenClaw docs
+  - name: OpenClaw Home Assistant Add-on Docs (DOCS.md)
+    url: https://github.com/techartdev/OpenClawHomeAssistant/blob/main/DOCS.md
+    about: Add-on specific installation, configuration, and troubleshooting.
+  - name: OpenClaw Home Assistant Discord
+    url: https://discord.gg/Nx4H3XmY
+    about: Community support for this Home Assistant add-on.
+  - name: OpenClaw Official Docs
     url: https://docs.openclaw.ai
-    about: Check troubleshooting and configuration guides first.
-  - name: OpenClaw Community Discord
+    about: Official OpenClaw platform documentation.
+  - name: OpenClaw Official Community Discord
     url: https://discord.com/invite/clawd
-    about: Ask questions and share setup details with the community.
+    about: Official OpenClaw community server.
