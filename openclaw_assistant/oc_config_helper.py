@@ -57,7 +57,7 @@ def set_gateway_setting(key, value):
     return write_config(cfg)
 
 
-def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_api: bool, allow_insecure_auth: bool):
+def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_api: bool, allow_insecure_auth: bool, env_vars: str = ""):
     """
     Apply gateway settings to OpenClaw config.
     
@@ -67,6 +67,7 @@ def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_a
         port: Port number to listen on (must be 1-65535)
         enable_openai_api: Enable OpenAI-compatible Chat Completions endpoint
         allow_insecure_auth: Allow insecure HTTP authentication
+        env_vars: Semicolon-separated environment variables (e.g., "VAR1=value1;VAR2=value2")
     """
     # Validate gateway mode
     if mode not in ["local", "remote"]:
@@ -112,6 +113,7 @@ def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_a
     current_port = gateway.get("port", 18789)
     current_openai_api = chat_completions.get("enabled", False)
     current_insecure = control_ui.get("allowInsecureAuth", False)
+    current_env_vars = gateway.get("env", {})
     
     changes = []
     
@@ -135,6 +137,37 @@ def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_a
         control_ui["allowInsecureAuth"] = allow_insecure_auth
         changes.append(f"allowInsecureAuth: {current_insecure} -> {allow_insecure_auth}")
     
+    # Parse and apply environment variables
+    new_env_vars = {}
+    if env_vars.strip():
+        try:
+            # Parse semicolon-separated key=value pairs
+            pairs = env_vars.split(';')
+            for pair in pairs:
+                pair = pair.strip()
+                if not pair:
+                    continue
+                if '=' not in pair:
+                    print(f"WARN: Invalid env var format '{pair}' (missing '=')")
+                    continue
+                key, value = pair.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+                if not key:
+                    print(f"WARN: Invalid env var key (empty)")
+                    continue
+                new_env_vars[key] = value
+        except Exception as e:
+            print(f"ERROR: Failed to parse environment variables: {e}")
+            return False
+    
+    if new_env_vars != current_env_vars:
+        gateway["env"] = new_env_vars
+        if new_env_vars:
+            changes.append(f"env: {len(new_env_vars)} variables")
+        else:
+            changes.append("env: cleared")
+    
     if changes:
         if write_config(cfg):
             print(f"INFO: Updated gateway settings: {', '.join(changes)}")
@@ -143,7 +176,7 @@ def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_a
             print("ERROR: Failed to write config")
             return False
     else:
-        print(f"INFO: Gateway settings already correct (mode={mode}, bind={bind_mode}, port={port}, chatCompletions={enable_openai_api}, allowInsecureAuth={allow_insecure_auth})")
+        print(f"INFO: Gateway settings already correct (mode={mode}, bind={bind_mode}, port={port}, chatCompletions={enable_openai_api}, allowInsecureAuth={allow_insecure_auth}, env vars={len(current_env_vars)})")
         return True
 
 
@@ -156,15 +189,16 @@ def main():
     cmd = sys.argv[1]
     
     if cmd == "apply-gateway-settings":
-        if len(sys.argv) != 7:
-            print("Usage: oc_config_helper.py apply-gateway-settings <local|remote> <auto|loopback|lan|tailnet> <port> <enable_openai_api:true|false> <allow_insecure:true|false>")
+        if len(sys.argv) < 7:
+            print("Usage: oc_config_helper.py apply-gateway-settings <local|remote> <auto|loopback|lan|tailnet> <port> <enable_openai_api:true|false> <allow_insecure:true|false> [env_vars]")
             sys.exit(1)
         mode = sys.argv[2]
         bind_mode = sys.argv[3]
         port = int(sys.argv[4])
         enable_openai_api = sys.argv[5].lower() == "true"
         allow_insecure_auth = sys.argv[6].lower() == "true"
-        success = apply_gateway_settings(mode, bind_mode, port, enable_openai_api, allow_insecure_auth)
+        env_vars = sys.argv[7] if len(sys.argv) > 7 else ""
+        success = apply_gateway_settings(mode, bind_mode, port, enable_openai_api, allow_insecure_auth, env_vars)
         sys.exit(0 if success else 1)
     
     elif cmd == "get":

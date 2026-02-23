@@ -52,6 +52,7 @@ GATEWAY_PORT=$(jq -r '.gateway_port // 18789' "$OPTIONS_FILE")
 ENABLE_OPENAI_API=$(jq -r '.enable_openai_api // false' "$OPTIONS_FILE")
 ALLOW_INSECURE_AUTH=$(jq -r '.allow_insecure_auth // false' "$OPTIONS_FILE")
 FORCE_IPV4_DNS=$(jq -r '.force_ipv4_dns // false' "$OPTIONS_FILE")
+GW_ENV_VARS=$(jq -r '.gateway_env_vars // empty' "$OPTIONS_FILE")
 
 export TZ="$TZNAME"
 
@@ -146,6 +147,27 @@ export NODE_PATH="${PERSISTENT_NODE_GLOBAL}/lib/node_modules:${NODE_PATH:-}"
 export PNPM_HOME="${PERSISTENT_NODE_GLOBAL}/pnpm"
 mkdir -p "$PNPM_HOME"
 export PATH="${PNPM_HOME}:${PATH}"
+
+# Export gateway environment variables from add-on config
+# These are user-defined variables that should be available to the gateway process
+if [ -n "$GW_ENV_VARS" ]; then
+  echo "INFO: Setting gateway environment variables from add-on config..."
+  IFS=';' read -ra ENV_VARS <<< "$GW_ENV_VARS"
+  for var in "${ENV_VARS[@]}"; do
+    var=$(echo "$var" | xargs)  # trim whitespace
+    if [ -z "$var" ]; then
+      continue
+    fi
+    if [[ ! "$var" =~ ^[A-Za-z_][A-Za-z0-9_]*=.*$ ]]; then
+      echo "WARN: Invalid environment variable format: '$var' (skipping)"
+      continue
+    fi
+    export "$var"
+    # Extract key for logging (don't log values for security)
+    key="${var%%=*}"
+    echo "INFO: Exported gateway env var: $key"
+  done
+fi
 
 # ------------------------------------------------------------------------------
 # Persist Linuxbrew/Homebrew across Docker image rebuilds
@@ -353,7 +375,7 @@ fi
 
 if [ -f "$OPENCLAW_CONFIG_PATH" ]; then
   if [ -f "$HELPER_PATH" ]; then
-    if ! python3 "$HELPER_PATH" apply-gateway-settings "$GATEWAY_MODE" "$GATEWAY_BIND_MODE" "$GATEWAY_PORT" "$ENABLE_OPENAI_API" "$ALLOW_INSECURE_AUTH"; then
+    if ! python3 "$HELPER_PATH" apply-gateway-settings "$GATEWAY_MODE" "$GATEWAY_BIND_MODE" "$GATEWAY_PORT" "$ENABLE_OPENAI_API" "$ALLOW_INSECURE_AUTH" "$GW_ENV_VARS"; then
       rc=$?
       echo "ERROR: Failed to apply gateway settings via oc_config_helper.py (exit code ${rc})."
       echo "ERROR: Gateway configuration may be incorrect; aborting startup."

@@ -88,6 +88,11 @@ options:
   # (can affect Telegram API polling in some HAOS/VM setups).
   force_ipv4_dns: false
 
+  # Environment variables to pass to the gateway (semicolon-separated key=value pairs)
+  # Example: "SERVICE_API=123;SERVICE2_API=1231"
+  # These will be exported as environment variables when running the gateway
+  gateway_env_vars: ""
+
 
 schema:
   timezone: str
@@ -109,3 +114,4 @@ schema:
   enable_openai_api: bool?
   allow_insecure_auth: bool?
   force_ipv4_dns: bool?
+  gateway_env_vars: str?
