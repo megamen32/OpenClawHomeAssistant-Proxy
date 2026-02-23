@@ -1,6 +1,6 @@
 # OpenClaw Assistant – Home Assistant App/Add-on
 
-## [Join our Discord Server!](https://discord.gg/Nx4H3XmY)
+## [Join our Discord Server!](https://discord.gg/xeHeKu9jYp)
 ![OpenClaw Assistant](https://github.com/techartdev/OpenClawHomeAssistant/blob/main/oca_addon.png?raw=true)
 
 ### OpenClaw Home Assistant integration is available now!  https://github.com/techartdev/OpenClawHomeAssistantIntegration
