@@ -52,7 +52,7 @@ GATEWAY_PORT=$(jq -r '.gateway_port // 18789' "$OPTIONS_FILE")
 ENABLE_OPENAI_API=$(jq -r '.enable_openai_api // false' "$OPTIONS_FILE")
 ALLOW_INSECURE_AUTH=$(jq -r '.allow_insecure_auth // false' "$OPTIONS_FILE")
 FORCE_IPV4_DNS=$(jq -r '.force_ipv4_dns // false' "$OPTIONS_FILE")
-GW_ENV_VARS=$(jq -r '.gateway_env_vars // empty' "$OPTIONS_FILE")
+GW_ENV_VARS=$(jq -c '.gateway_env_vars // {}' "$OPTIONS_FILE")
 
 export TZ="$TZNAME"
 
@@ -150,21 +150,21 @@ export PATH="${PNPM_HOME}:${PATH}"
 
 # Export gateway environment variables from add-on config
 # These are user-defined variables that should be available to the gateway process
-if [ -n "$GW_ENV_VARS" ]; then
+if [ "$GW_ENV_VARS" != "{}" ] && [ -n "$GW_ENV_VARS" ]; then
   echo "INFO: Setting gateway environment variables from add-on config..."
   env_count=0
   max_env_vars=50
   max_var_name_size=255
   
+  # Parse JSON object and export each key=value pair
   while IFS='=' read -r key value; do
-    # Skip empty lines
+    # Skip empty lines and trim whitespace
+    key=$(echo "$key" | xargs)
+    value=$(echo "$value" | xargs)
+    
     if [ -z "$key" ]; then
       continue
     fi
-    
-    # Trim whitespace
-    key=$(echo "$key" | xargs)
-    value=$(echo "$value" | xargs)
     
     # Validate variable name format
     if ! [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
@@ -187,7 +187,7 @@ if [ -n "$GW_ENV_VARS" ]; then
     export "$key=$value"
     ((env_count++))
     echo "INFO: Exported gateway env var: $key"
-  done < <(echo "$GW_ENV_VARS" | tr ';' '\n')
+  done < <(echo "$GW_ENV_VARS" | jq -r 'to_entries[] | "\(.key)=\(.value)"')
   
   if [ $env_count -gt 0 ]; then
     echo "INFO: Successfully exported $env_count gateway environment variable(s)"

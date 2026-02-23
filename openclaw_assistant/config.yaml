@@ -88,15 +88,20 @@ options:
   # (can affect Telegram API polling in some HAOS/VM setups).
   force_ipv4_dns: false
 
-  # Environment variables to pass to the gateway (semicolon-separated key=value pairs)
-  # Format: "KEY1=value1;KEY2=value2" (semicolon-separated, no spaces around '=')
+  # Environment variables to pass to the gateway as a YAML map
+  # These variables are exported to the gateway process at startup
   # Examples:
-  #   - API keys: "OPENAI_API_KEY=sk-abc123;ANTHROPIC_API_KEY=claude-key"
-  #   - Service URLs: "SERVICE_URL=https://api.example.com;LOG_LEVEL=debug"
-  #   - Features: "FEATURE_FLAG_X=1;FEATURE_FLAG_Y=0"
+  #   API keys:
+  #     OPENAI_API_KEY: "sk-abc123"
+  #     ANTHROPIC_API_KEY: "claude-key"
+  #   Service URLs:
+  #     SERVICE_URL: "https://api.example.com"
+  #     LOG_LEVEL: "debug"
+  #   Feature flags:
+  #     FEATURE_FLAG_X: "1"
+  #     FEATURE_FLAG_Y: "0"
   # Limits: max 50 variables, max key length 255 chars, max value length 10000 chars
-  # Note: Values may contain special characters; they are not shell-escaped
-  gateway_env_vars: ""
+  gateway_env_vars: {}
 
 
 schema:
@@ -119,4 +124,4 @@ schema:
   enable_openai_api: bool?
   allow_insecure_auth: bool?
   force_ipv4_dns: bool?
-  gateway_env_vars: str?
+  gateway_env_vars: map(str)?

@@ -62,7 +62,7 @@ def set_gateway_setting(key, value):
     return write_config(cfg)
 
 
-def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_api: bool, allow_insecure_auth: bool, env_vars: str = ""):
+def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_api: bool, allow_insecure_auth: bool, env_vars: str = "{}"):
     """
     Apply gateway settings to OpenClaw config.
     
@@ -72,7 +72,7 @@ def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_a
         port: Port number to listen on (must be 1-65535)
         enable_openai_api: Enable OpenAI-compatible Chat Completions endpoint
         allow_insecure_auth: Allow insecure HTTP authentication
-        env_vars: Semicolon-separated environment variables (e.g., "VAR1=value1;VAR2=value2")
+        env_vars: JSON string with environment variables as key-value pairs (e.g., '{"VAR1":"value1","VAR2":"value2"}')
     """
     # Validate gateway mode
     if mode not in ["local", "remote"]:
@@ -142,23 +142,20 @@ def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_a
         control_ui["allowInsecureAuth"] = allow_insecure_auth
         changes.append(f"allowInsecureAuth: {current_insecure} -> {allow_insecure_auth}")
     
-    # Parse and apply environment variables
+    # Parse and apply environment variables from JSON
     new_env_vars = {}
-    if env_vars.strip():
+    if env_vars.strip() and env_vars != "{}":
         try:
-            # Parse semicolon-separated key=value pairs
-            pairs = env_vars.split(';')
-            for pair in pairs:
-                pair = pair.strip()
-                if not pair:
-                    continue
-                if '=' not in pair:
-                    print(f"WARN: Invalid env var format '{pair}' (missing '=')")
-                    continue
-                
-                key, value = pair.split('=', 1)
-                key = key.strip()
-                value = value.strip()
+            # Parse JSON object containing environment variables
+            parsed = json.loads(env_vars)
+            if not isinstance(parsed, dict):
+                print(f"ERROR: Environment variables must be a JSON object (dict), got {type(parsed).__name__}")
+                return False
+            
+            for key, value in parsed.items():
+                # Ensure value is string
+                if not isinstance(value, str):
+                    value = str(value)
                 
                 # Validate key format
                 if not key:
@@ -176,18 +173,17 @@ def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_a
                     print(f"ERROR: Environment variable '{key}' value too large (max {MAX_ENV_VAR_VALUE_SIZE} chars)")
                     return False
                 
-                # Warn about duplicate keys
-                if key in new_env_vars:
-                    print(f"WARN: Environment variable '{key}' appears multiple times; using last value")
-                
                 new_env_vars[key] = value
             
             # Enforce limit on total variables
             if len(new_env_vars) > MAX_ENV_VARS:
                 print(f"ERROR: Too many environment variables ({len(new_env_vars)}), max {MAX_ENV_VARS}")
                 return False
+        except json.JSONDecodeError as e:
+            print(f"ERROR: Failed to parse environment variables JSON: {e}")
+            return False
         except Exception as e:
-            print(f"ERROR: Failed to parse environment variables: {e}")
+            print(f"ERROR: Failed to process environment variables: {e}")
             return False
     
     if new_env_vars != current_env_vars:
@@ -220,14 +216,14 @@ def main():
     
     if cmd == "apply-gateway-settings":
         if len(sys.argv) < 7:
-            print("Usage: oc_config_helper.py apply-gateway-settings <local|remote> <auto|loopback|lan|tailnet> <port> <enable_openai_api:true|false> <allow_insecure:true|false> [env_vars]")
+            print("Usage: oc_config_helper.py apply-gateway-settings <local|remote> <auto|loopback|lan|tailnet> <port> <enable_openai_api:true|false> <allow_insecure:true|false> [env_vars_json]")
             sys.exit(1)
         mode = sys.argv[2]
         bind_mode = sys.argv[3]
         port = int(sys.argv[4])
         enable_openai_api = sys.argv[5].lower() == "true"
         allow_insecure_auth = sys.argv[6].lower() == "true"
-        env_vars = sys.argv[7] if len(sys.argv) > 7 else ""
+        env_vars = sys.argv[7] if len(sys.argv) > 7 else "{}"
         success = apply_gateway_settings(mode, bind_mode, port, enable_openai_api, allow_insecure_auth, env_vars)
         sys.exit(0 if success else 1)
     
