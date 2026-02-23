@@ -55,7 +55,9 @@ GATEWAY_TRUSTED_PROXIES=$(jq -r '.gateway_trusted_proxies // empty' "$OPTIONS_FI
 FORCE_IPV4_DNS=$(jq -r '.force_ipv4_dns // true' "$OPTIONS_FILE")
 ACCESS_MODE=$(jq -r '.access_mode // "custom"' "$OPTIONS_FILE")
 NGINX_LOG_LEVEL=$(jq -r '.nginx_log_level // "minimal"' "$OPTIONS_FILE")
-GW_ENV_VARS=$(jq -c '.gateway_env_vars // {}' "$OPTIONS_FILE")
+GW_ENV_VARS_TYPE=$(jq -r 'if .gateway_env_vars == null then "null" else (.gateway_env_vars | type) end' "$OPTIONS_FILE")
+GW_ENV_VARS_RAW=$(jq -r '.gateway_env_vars // empty' "$OPTIONS_FILE")
+GW_ENV_VARS_JSON=$(jq -c '.gateway_env_vars // []' "$OPTIONS_FILE")
 
 export TZ="$TZNAME"
 
@@ -211,63 +213,113 @@ is_reserved_gateway_env_var() {
   esac
 }
 
-# Export gateway environment variables from add-on config
-# These are user-defined variables that should be available to the gateway process
-if [ "$GW_ENV_VARS" != "{}" ] && [ -n "$GW_ENV_VARS" ]; then
-  if printf '%s' "$GW_ENV_VARS" | jq -e 'type == "object"' >/dev/null 2>&1; then
-    echo "INFO: Setting gateway environment variables from add-on config..."
-    env_count=0
-    max_env_vars=50
-    max_var_name_size=255
-    max_var_value_size=10000
+try_export_gateway_env_var() {
+  local key="$1"
+  local value="$2"
 
-    # Use null-delimited key/value pairs to preserve spaces and special chars.
-    while IFS= read -r -d '' key && IFS= read -r -d '' value; do
-      if [ -z "$key" ]; then
-        continue
-      fi
-
-      # Validate variable name format
-      if ! [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-        echo "WARN: Invalid environment variable name: '$key' (must start with letter/underscore, skip)"
-        continue
-      fi
-
-      # Protect critical runtime variables from accidental override.
-      if is_reserved_gateway_env_var "$key"; then
-        echo "WARN: Reserved environment variable '$key' cannot be overridden via gateway_env_vars (skip)"
-        continue
-      fi
-
-      # Enforce max variable name length
-      if [ ${#key} -gt $max_var_name_size ]; then
-        echo "WARN: Environment variable name too long: '$key' (max $max_var_name_size chars, skip)"
-        continue
-      fi
-
-      # Enforce max variable value length
-      if [ ${#value} -gt $max_var_value_size ]; then
-        echo "WARN: Environment variable value too long for '$key' (max $max_var_value_size chars, skip)"
-        continue
-      fi
-
-      # Enforce limit on number of variables
-      if [ $env_count -ge $max_env_vars ]; then
-        echo "WARN: Maximum environment variables limit ($max_env_vars) reached (skip)"
-        continue
-      fi
-
-      export "$key=$value"
-      ((env_count++))
-      echo "INFO: Exported gateway env var: $key"
-    done < <(printf '%s' "$GW_ENV_VARS" | jq -j 'to_entries[] | .key, "\u0000", (.value | tostring), "\u0000"')
-
-    if [ $env_count -gt 0 ]; then
-      echo "INFO: Successfully exported $env_count gateway environment variable(s)"
-    fi
-  else
-    echo "WARN: Invalid gateway_env_vars format in add-on options (expected JSON object), skipping"
+  if [ -z "$key" ]; then
+    return 0
   fi
+
+  # Validate variable name format
+  if ! [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    echo "WARN: Invalid environment variable name: '$key' (must start with letter/underscore, skip)"
+    return 0
+  fi
+
+  # Protect critical runtime variables from accidental override.
+  if is_reserved_gateway_env_var "$key"; then
+    echo "WARN: Reserved environment variable '$key' cannot be overridden via gateway_env_vars (skip)"
+    return 0
+  fi
+
+  # Enforce max variable name length
+  if [ ${#key} -gt $max_var_name_size ]; then
+    echo "WARN: Environment variable name too long: '$key' (max $max_var_name_size chars, skip)"
+    return 0
+  fi
+
+  # Enforce max variable value length
+  if [ ${#value} -gt $max_var_value_size ]; then
+    echo "WARN: Environment variable value too long for '$key' (max $max_var_value_size chars, skip)"
+    return 0
+  fi
+
+  # Enforce limit on number of variables
+  if [ $env_count -ge $max_env_vars ]; then
+    echo "WARN: Maximum environment variables limit ($max_env_vars) reached (skip)"
+    return 0
+  fi
+
+  export "$key=$value"
+  ((env_count++))
+  echo "INFO: Exported gateway env var: $key"
+}
+
+# Export gateway environment variables from add-on config
+# These are user-defined variables that should be available to the gateway process.
+# Primary format: array of {name, value} objects.
+if [ "$GW_ENV_VARS_TYPE" = "array" ] || [ "$GW_ENV_VARS_TYPE" = "object" ] || { [ "$GW_ENV_VARS_TYPE" = "string" ] && [ -n "$GW_ENV_VARS_RAW" ]; }; then
+  env_count=0
+  max_env_vars=50
+  max_var_name_size=255
+  max_var_value_size=10000
+
+  if [ "$GW_ENV_VARS_TYPE" = "array" ] && [ "$GW_ENV_VARS_JSON" != "[]" ]; then
+    echo "INFO: Setting gateway environment variables from list config..."
+
+    invalid_entries_count=$(printf '%s' "$GW_ENV_VARS_JSON" | jq '[.[] | select((type != "object") or ((.name | type) != "string") or (has("value") | not))] | length')
+    if [ "$invalid_entries_count" -gt 0 ]; then
+      echo "WARN: Found $invalid_entries_count invalid gateway_env_vars entries; expected objects with 'name' and 'value' keys (skip)"
+    fi
+
+    while IFS= read -r -d '' key && IFS= read -r -d '' value; do
+      try_export_gateway_env_var "$key" "$value"
+    done < <(printf '%s' "$GW_ENV_VARS_JSON" | jq -j '.[] | select((type == "object") and ((.name | type) == "string") and (has("value"))) | .name, "\u0000", (.value | tostring), "\u0000"')
+  elif [ "$GW_ENV_VARS_TYPE" = "object" ] && [ "$GW_ENV_VARS_JSON" != "{}" ]; then
+    # Backward compatibility for old map/object configuration.
+    echo "INFO: Setting gateway environment variables from object config (legacy format)..."
+    while IFS= read -r -d '' key && IFS= read -r -d '' value; do
+      try_export_gateway_env_var "$key" "$value"
+    done < <(printf '%s' "$GW_ENV_VARS_JSON" | jq -j 'to_entries[] | .key, "\u0000", (.value | tostring), "\u0000"')
+  elif [ "$GW_ENV_VARS_TYPE" = "string" ] && [ -n "$GW_ENV_VARS_RAW" ]; then
+    # Preferred for complex values: JSON object string in one line.
+    if printf '%s' "$GW_ENV_VARS_RAW" | jq -e 'type == "object"' >/dev/null 2>&1; then
+      echo "INFO: Setting gateway environment variables from JSON string config..."
+      while IFS= read -r -d '' key && IFS= read -r -d '' value; do
+        try_export_gateway_env_var "$key" "$value"
+      done < <(printf '%s' "$GW_ENV_VARS_RAW" | jq -j 'to_entries[] | .key, "\u0000", (.value | tostring), "\u0000"')
+    else
+      # Supported simple format: KEY=VALUE pairs separated by ';' or newlines.
+      echo "INFO: Setting gateway environment variables from KEY=VALUE string config..."
+      while IFS= read -r entry; do
+        entry="${entry%$'\r'}"
+        trimmed="$(printf '%s' "$entry" | sed -E 's/^[[:space:]]+//;s/[[:space:]]+$//')"
+
+        # Skip empty lines and comments.
+        if [ -z "$trimmed" ] || [[ "$trimmed" == \#* ]]; then
+          continue
+        fi
+
+        if [[ "$trimmed" != *"="* ]]; then
+          echo "WARN: Invalid gateway_env_vars entry '$trimmed' (expected KEY=VALUE, skip)"
+          continue
+        fi
+
+        key="${trimmed%%=*}"
+        value="${trimmed#*=}"
+        key="$(printf '%s' "$key" | sed -E 's/^[[:space:]]+//;s/[[:space:]]+$//')"
+
+        try_export_gateway_env_var "$key" "$value"
+      done < <(printf '%s' "$GW_ENV_VARS_RAW" | tr ';' '\n')
+    fi
+  fi
+
+  if [ $env_count -gt 0 ]; then
+    echo "INFO: Successfully exported $env_count gateway environment variable(s)"
+  fi
+elif [ "$GW_ENV_VARS_TYPE" != "null" ]; then
+  echo "WARN: Invalid gateway_env_vars format in add-on options (expected list, string or object), skipping"
 fi
 
 # ------------------------------------------------------------------------------

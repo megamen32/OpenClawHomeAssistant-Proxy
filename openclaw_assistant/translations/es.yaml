@@ -97,4 +97,4 @@ configuration:
       full: "Completo (registrar todas las solicitudes)"
   gateway_env_vars:
     name: Variables de entorno del Gateway
-    description: Variables de entorno que se pasan al proceso del gateway OpenClaw al iniciarse (definidas como un mapa YAML; máximo 50 variables, claves de hasta 255 caracteres, valores de hasta 10 000 caracteres).
+    description: Variables de entorno que se pasan al proceso del gateway OpenClaw al iniciarse (lista de entradas name/value en la UI de Home Assistant; maximo 50 variables, claves de hasta 255 caracteres, valores de hasta 10 000 caracteres).

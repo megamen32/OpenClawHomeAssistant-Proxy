@@ -97,4 +97,4 @@ configuration:
       full: "Full (log all requests)"
   gateway_env_vars:
     name: Gateway Environment Variables
-    description: Environment variables passed to the OpenClaw gateway process at startup (defined as a YAML map; max 50 variables, keys up to 255 characters, values up to 10,000 characters).
+    description: Environment variables passed to the OpenClaw gateway process at startup (list entries with name/value in Home Assistant UI; max 50 variables, keys up to 255 characters, values up to 10,000 characters).
