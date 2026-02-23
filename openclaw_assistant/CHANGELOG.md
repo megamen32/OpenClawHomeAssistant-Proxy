@@ -16,7 +16,6 @@ All notable changes to the OpenClaw Assistant Home Assistant Add-on will be docu
 
 ### Added
 - **`nginx_log_level` option** (`minimal` / `full`, default `minimal`): suppresses repetitive Home Assistant health-check and polling requests (`GET /`, `GET /v1/models`, `POST /tools/invoke`) from the nginx access log.
-- New add-on option `gateway_env_vars` and export support for gateway process environment variables with limits (50 vars, key <=255 chars, value <=10000 chars).
 
 ## [0.5.50] - 2026-02-23
 

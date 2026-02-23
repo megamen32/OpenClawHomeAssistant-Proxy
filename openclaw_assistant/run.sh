@@ -199,6 +199,10 @@ is_reserved_gateway_env_var() {
     HOME|PATH|PWD|OLDPWD|SHLVL|TZ|XDG_CONFIG_HOME|PNPM_HOME|NODE_PATH|NODE_OPTIONS|NODE_NO_WARNINGS)
       return 0
       ;;
+    # Low-level injection vectors that can alter process/linker/shell behavior.
+    LD_*|DYLD_*|BASH_ENV|ENV|BASH_FUNC_*)
+      return 0
+      ;;
     # Proxy vars managed by add-on options.
     HTTP_PROXY|HTTPS_PROXY|NO_PROXY|http_proxy|https_proxy|no_proxy)
       return 0
