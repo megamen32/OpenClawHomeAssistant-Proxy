@@ -151,46 +151,53 @@ export PATH="${PNPM_HOME}:${PATH}"
 # Export gateway environment variables from add-on config
 # These are user-defined variables that should be available to the gateway process
 if [ "$GW_ENV_VARS" != "{}" ] && [ -n "$GW_ENV_VARS" ]; then
-  echo "INFO: Setting gateway environment variables from add-on config..."
-  env_count=0
-  max_env_vars=50
-  max_var_name_size=255
-  
-  # Parse JSON object and export each key=value pair
-  while IFS='=' read -r key value; do
-    # Skip empty lines and trim whitespace
-    key=$(echo "$key" | xargs)
-    value=$(echo "$value" | xargs)
-    
-    if [ -z "$key" ]; then
-      continue
+  if printf '%s' "$GW_ENV_VARS" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    echo "INFO: Setting gateway environment variables from add-on config..."
+    env_count=0
+    max_env_vars=50
+    max_var_name_size=255
+    max_var_value_size=10000
+
+    # Use null-delimited key/value pairs to preserve spaces and special chars.
+    while IFS= read -r -d '' key && IFS= read -r -d '' value; do
+      if [ -z "$key" ]; then
+        continue
+      fi
+
+      # Validate variable name format
+      if ! [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+        echo "WARN: Invalid environment variable name: '$key' (must start with letter/underscore, skip)"
+        continue
+      fi
+
+      # Enforce max variable name length
+      if [ ${#key} -gt $max_var_name_size ]; then
+        echo "WARN: Environment variable name too long: '$key' (max $max_var_name_size chars, skip)"
+        continue
+      fi
+
+      # Enforce max variable value length
+      if [ ${#value} -gt $max_var_value_size ]; then
+        echo "WARN: Environment variable value too long for '$key' (max $max_var_value_size chars, skip)"
+        continue
+      fi
+
+      # Enforce limit on number of variables
+      if [ $env_count -ge $max_env_vars ]; then
+        echo "WARN: Maximum environment variables limit ($max_env_vars) reached (skip)"
+        continue
+      fi
+
+      export "$key=$value"
+      ((env_count++))
+      echo "INFO: Exported gateway env var: $key"
+    done < <(printf '%s' "$GW_ENV_VARS" | jq -j 'to_entries[] | .key, "\u0000", (.value | tostring), "\u0000"')
+
+    if [ $env_count -gt 0 ]; then
+      echo "INFO: Successfully exported $env_count gateway environment variable(s)"
     fi
-    
-    # Validate variable name format
-    if ! [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-      echo "WARN: Invalid environment variable name: '$key' (must start with letter/underscore, skip)"
-      continue
-    fi
-    
-    # Enforce max variable name length
-    if [ ${#key} -gt $max_var_name_size ]; then
-      echo "WARN: Environment variable name too long: '$key' (max $max_var_name_size chars, skip)"
-      continue
-    fi
-    
-    # Enforce limit on number of variables
-    if [ $env_count -ge $max_env_vars ]; then
-      echo "WARN: Maximum environment variables limit ($max_env_vars) reached (skip)"
-      continue
-    fi
-    
-    export "$key=$value"
-    ((env_count++))
-    echo "INFO: Exported gateway env var: $key"
-  done < <(echo "$GW_ENV_VARS" | jq -r 'to_entries[] | "\(.key)=\(.value)"')
-  
-  if [ $env_count -gt 0 ]; then
-    echo "INFO: Successfully exported $env_count gateway environment variable(s)"
+  else
+    echo "WARN: Invalid gateway_env_vars format in add-on options (expected JSON object), skipping"
   fi
 fi
 

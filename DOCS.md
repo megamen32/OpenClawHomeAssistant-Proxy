@@ -204,6 +204,7 @@ All options are set via **Settings → Apps/Add-ons → OpenClaw Assistant → C
 | `enable_openai_api` | bool | `false` | Enable the OpenAI-compatible `/v1/chat/completions` endpoint. Required for [Assist pipeline integration](#6c-assist-pipeline-integration-openai-api) |
 | `allow_insecure_auth` | bool | `false` | Allow HTTP (non-HTTPS) authentication on LAN. **Required** for browser access over plain HTTP |
 | `force_ipv4_dns` | bool | `false` | Force IPv4-first DNS ordering for Node network calls. Useful if IPv6 DNS resolves but IPv6 egress is broken (can affect Telegram API polling). |
+| `gateway_env_vars` | map(string) | `{}` | Environment variables exported to the gateway process at startup. Use YAML map format (for example `OPENAI_API_KEY: "sk-..."`). Limits: max 50 vars, key length 255, value length 10000. |
 
 ### Terminal
 

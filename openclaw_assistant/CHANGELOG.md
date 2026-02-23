@@ -2,6 +2,11 @@
 
 All notable changes to the OpenClaw Assistant Home Assistant Add-on will be documented in this file.
 
+## [0.5.50] - 2026-02-23
+
+### Added
+- New add-on option `gateway_env_vars` that accepts a YAML map; values are exported verbatim to the gateway process at startup with limits (50 vars, key ≤255 chars, value ≤10000 chars).
+
 ## [0.5.49] - 2026-02-22
 
 ### Added
