@@ -152,21 +152,46 @@ export PATH="${PNPM_HOME}:${PATH}"
 # These are user-defined variables that should be available to the gateway process
 if [ -n "$GW_ENV_VARS" ]; then
   echo "INFO: Setting gateway environment variables from add-on config..."
-  IFS=';' read -ra ENV_VARS <<< "$GW_ENV_VARS"
-  for var in "${ENV_VARS[@]}"; do
-    var=$(echo "$var" | xargs)  # trim whitespace
-    if [ -z "$var" ]; then
+  env_count=0
+  max_env_vars=50
+  max_var_name_size=255
+  
+  while IFS='=' read -r key value; do
+    # Skip empty lines
+    if [ -z "$key" ]; then
       continue
     fi
-    if [[ ! "$var" =~ ^[A-Za-z_][A-Za-z0-9_]*=.*$ ]]; then
-      echo "WARN: Invalid environment variable format: '$var' (skipping)"
+    
+    # Trim whitespace
+    key=$(echo "$key" | xargs)
+    value=$(echo "$value" | xargs)
+    
+    # Validate variable name format
+    if ! [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      echo "WARN: Invalid environment variable name: '$key' (must start with letter/underscore, skip)"
       continue
     fi
-    export "$var"
-    # Extract key for logging (don't log values for security)
-    key="${var%%=*}"
+    
+    # Enforce max variable name length
+    if [ ${#key} -gt $max_var_name_size ]; then
+      echo "WARN: Environment variable name too long: '$key' (max $max_var_name_size chars, skip)"
+      continue
+    fi
+    
+    # Enforce limit on number of variables
+    if [ $env_count -ge $max_env_vars ]; then
+      echo "WARN: Maximum environment variables limit ($max_env_vars) reached (skip)"
+      continue
+    fi
+    
+    export "$key=$value"
+    ((env_count++))
     echo "INFO: Exported gateway env var: $key"
-  done
+  done < <(echo "$GW_ENV_VARS" | tr ';' '\n')
+  
+  if [ $env_count -gt 0 ]; then
+    echo "INFO: Successfully exported $env_count gateway environment variable(s)"
+  fi
 fi
 
 # ------------------------------------------------------------------------------

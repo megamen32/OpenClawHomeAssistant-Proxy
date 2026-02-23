@@ -89,8 +89,13 @@ options:
   force_ipv4_dns: false
 
   # Environment variables to pass to the gateway (semicolon-separated key=value pairs)
-  # Example: "SERVICE_API=123;SERVICE2_API=1231"
-  # These will be exported as environment variables when running the gateway
+  # Format: "KEY1=value1;KEY2=value2" (semicolon-separated, no spaces around '=')
+  # Examples:
+  #   - API keys: "OPENAI_API_KEY=sk-abc123;ANTHROPIC_API_KEY=claude-key"
+  #   - Service URLs: "SERVICE_URL=https://api.example.com;LOG_LEVEL=debug"
+  #   - Features: "FEATURE_FLAG_X=1;FEATURE_FLAG_Y=0"
+  # Limits: max 50 variables, max key length 255 chars, max value length 10000 chars
+  # Note: Values may contain special characters; they are not shell-escaped
   gateway_env_vars: ""
 
 

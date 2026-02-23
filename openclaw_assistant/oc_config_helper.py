@@ -12,6 +12,11 @@ from pathlib import Path
 
 CONFIG_PATH = Path(os.environ.get("OPENCLAW_CONFIG_PATH", "/config/.openclaw/openclaw.json"))
 
+# Limits for environment variable handling
+MAX_ENV_VARS = 50
+MAX_ENV_VAR_NAME_SIZE = 255
+MAX_ENV_VAR_VALUE_SIZE = 10000
+
 
 
 def read_config():
@@ -150,13 +155,37 @@ def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_a
                 if '=' not in pair:
                     print(f"WARN: Invalid env var format '{pair}' (missing '=')")
                     continue
+                
                 key, value = pair.split('=', 1)
                 key = key.strip()
                 value = value.strip()
+                
+                # Validate key format
                 if not key:
                     print(f"WARN: Invalid env var key (empty)")
                     continue
+                if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', key):
+                    print(f"WARN: Invalid env var name '{key}' (must start with letter/underscore)")
+                    continue
+                
+                # Enforce size limits
+                if len(key) > MAX_ENV_VAR_NAME_SIZE:
+                    print(f"ERROR: Environment variable name '{key}' too long (max {MAX_ENV_VAR_NAME_SIZE} chars)")
+                    return False
+                if len(value) > MAX_ENV_VAR_VALUE_SIZE:
+                    print(f"ERROR: Environment variable '{key}' value too large (max {MAX_ENV_VAR_VALUE_SIZE} chars)")
+                    return False
+                
+                # Warn about duplicate keys
+                if key in new_env_vars:
+                    print(f"WARN: Environment variable '{key}' appears multiple times; using last value")
+                
                 new_env_vars[key] = value
+            
+            # Enforce limit on total variables
+            if len(new_env_vars) > MAX_ENV_VARS:
+                print(f"ERROR: Too many environment variables ({len(new_env_vars)}), max {MAX_ENV_VARS}")
+                return False
         except Exception as e:
             print(f"ERROR: Failed to parse environment variables: {e}")
             return False
@@ -164,7 +193,8 @@ def apply_gateway_settings(mode: str, bind_mode: str, port: int, enable_openai_a
     if new_env_vars != current_env_vars:
         gateway["env"] = new_env_vars
         if new_env_vars:
-            changes.append(f"env: {len(new_env_vars)} variables")
+            var_names = ', '.join(sorted(new_env_vars.keys()))
+            changes.append(f"env: {var_names}")
         else:
             changes.append("env: cleared")
     
