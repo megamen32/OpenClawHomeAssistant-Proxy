@@ -116,6 +116,8 @@ options:
   #   Feature flags:
   #     FEATURE_FLAG_X: "1"
   #     FEATURE_FLAG_Y: "0"
+  # Reserved keys are blocked to protect runtime/security
+  # (e.g. PATH, HOME, NODE_OPTIONS, NODE_PATH, OPENCLAW_*, proxy vars).
   # Limits: max 50 variables, max key length 255 chars, max value length 10000 chars
   gateway_env_vars: {}
 

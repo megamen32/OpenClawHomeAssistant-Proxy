@@ -190,6 +190,27 @@ export PNPM_HOME="${PERSISTENT_NODE_GLOBAL}/pnpm"
 mkdir -p "$PNPM_HOME"
 export PATH="${PNPM_HOME}:${PATH}"
 
+# Protect critical runtime variables from accidental override via gateway_env_vars.
+is_reserved_gateway_env_var() {
+  case "$1" in
+    # Critical runtime paths/process vars.
+    HOME|PATH|PWD|OLDPWD|SHLVL|TZ|XDG_CONFIG_HOME|PNPM_HOME|NODE_PATH|NODE_OPTIONS|NODE_NO_WARNINGS)
+      return 0
+      ;;
+    # Proxy vars managed by add-on options.
+    HTTP_PROXY|HTTPS_PROXY|NO_PROXY|http_proxy|https_proxy|no_proxy)
+      return 0
+      ;;
+    # Add-on internal control vars.
+    OPENCLAW_*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 # Export gateway environment variables from add-on config
 # These are user-defined variables that should be available to the gateway process
 if [ "$GW_ENV_VARS" != "{}" ] && [ -n "$GW_ENV_VARS" ]; then
@@ -209,6 +230,12 @@ if [ "$GW_ENV_VARS" != "{}" ] && [ -n "$GW_ENV_VARS" ]; then
       # Validate variable name format
       if ! [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
         echo "WARN: Invalid environment variable name: '$key' (must start with letter/underscore, skip)"
+        continue
+      fi
+
+      # Protect critical runtime variables from accidental override.
+      if is_reserved_gateway_env_var "$key"; then
+        echo "WARN: Reserved environment variable '$key' cannot be overridden via gateway_env_vars (skip)"
         continue
       fi
 
