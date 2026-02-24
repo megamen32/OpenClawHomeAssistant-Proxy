@@ -159,19 +159,29 @@ This is the simplest way to get secure LAN access, especially for phones and tab
 
 > **Note**: If you skip CA installation, you can still access the gateway — just accept the browser's certificate warning once.
 
-### Method B — HTTPS via external reverse proxy
+### Method B — HTTPS via external reverse proxy (tested recipe: NPM)
 
-If you already run a reverse proxy (NPM, Caddy, Traefik):
+Use this when you already run Nginx Proxy Manager (or Caddy/Traefik).
 
+**OpenClaw add-on settings**
 1. Set `access_mode`: **lan_reverse_proxy**
-2. Set `gateway_trusted_proxies` to your proxy's IP/CIDR (e.g., `127.0.0.1,192.168.88.0/24`)
-3. Set `gateway_public_url` to your HTTPS URL
-4. Configure your proxy to forward HTTPS to `<HA-IP>:18789`
-5. Restart the add-on
+2. Set `gateway_trusted_proxies` to your proxy source CIDR/IP.
+   - Example for NPM add-on network: `172.30.0.0/16`
+   - Or strict single IP: `172.30.x.y/32`
+3. Set `gateway_public_url` to your final HTTPS URL (example: `https://openclaw.example.com`)
+4. Restart OpenClaw add-on
 
-See the landing page's **Reverse-proxy recipes** section for copy-paste configs.
+**NPM host config (known-good pattern)**
+1. Create Proxy Host: `openclaw.example.com`
+2. Forward to: `http://<HA-LAN-IP>:18789`
+3. Enable **Websockets Support**
+4. SSL tab: request/attach certificate, enable **Force SSL**
+5. Add custom header for trusted-proxy auth:
+   - `X-Forwarded-User: openclaw`
 
-> **Note**: Nabu Casa remote access only proxies port 8123 — it cannot forward custom ports. The Ingress page works through Nabu Casa, but the Gateway UI requires one of the methods above.
+Then open `https://openclaw.example.com`.
+
+> **Important**: Nabu Casa remote access only proxies port 8123. It does not expose custom add-on ports directly.
 
 ### Method C — SSH port forwarding (secure, no config changes)
 
@@ -185,13 +195,22 @@ Then open `http://localhost:18789` in your browser. `localhost` counts as a secu
 
 > **Limitation**: SSH forwarding doesn't work on phones/tablets. Use `lan_https` for mobile access.
 
-### Method D — Tailscale HTTPS
+### Method D — Tailnet flow (tested with HA Tailscale add-on + NPM)
 
-1. Set `access_mode`: **tailnet_https**
-2. Enable HTTPS certificates in your Tailnet admin: **DNS → HTTPS Certificates**
-3. On the HA host: `tailscale cert <machine-name>.ts.net`
-4. Set `gateway_public_url` to `https://<machine-name>.ts.net:18789`
-5. Restart the add-on
+This is the practical flow users report as stable in HAOS.
+
+1. In **Tailscale add-on**:
+   - Disable `userspace_networking` (must be `false` so other add-ons can reach tailnet interface)
+2. In **OpenClaw add-on**:
+   - Preferred: set `access_mode` to **tailnet_https**
+   - Alternative (equivalent): `gateway_bind_mode: tailnet`, token auth
+3. In **NPM**:
+   - Forward target to `http://<HA-TAILNET-IP>:18789`
+   - Enable websockets
+   - Configure TLS cert on the public host
+4. Set `gateway_public_url` to the final HTTPS URL and restart OpenClaw
+
+> **Why this flow**: `tailnet_https` in this add-on is a bind/auth preset. It does not automatically run `tailscale serve` inside OpenClaw.
 
 ### Setting up the "Open Gateway Web UI" button
 
@@ -250,8 +269,9 @@ All options are set via **Settings → Apps/Add-ons → OpenClaw Assistant → C
 | `gateway_trusted_proxies` | string | _(empty)_ | Comma-separated trusted proxy IP/CIDR list used with `gateway_auth_mode: trusted-proxy`. |
 
 When `gateway_auth_mode: trusted-proxy` is used, the add-on sets `gateway.auth.trustedProxy.userHeader` to `x-forwarded-user` by default.
-| `force_ipv4_dns` | bool | `false` | Force IPv4-first DNS ordering for Node network calls. Useful if IPv6 DNS resolves but IPv6 egress is broken (can affect Telegram API polling). |
+| `force_ipv4_dns` | bool | `true` | Force IPv4-first DNS ordering for Node network calls. **Recommended ON** — most HAOS VMs lack IPv6 egress, causing `web_fetch` and Telegram timeouts. Set to `false` only if your network has working IPv6. |
 | `gateway_env_vars` | list of `{name, value}` | `[]` | Environment variables exported to the gateway process at startup. UI format: list entries with `name` and `value` (example: `name=OPENAI_API_KEY`, `value=sk-...`). Limits: max 50 vars, key length 255, value length 10000. Reserved runtime keys are blocked (for example `PATH`, `HOME`, `NODE_OPTIONS`, `NODE_PATH`, `OPENCLAW_*`, proxy vars). Legacy string/object formats are still accepted for backward compatibility. |
+| `nginx_log_level` | `full` / `minimal` | `minimal` | Nginx access log verbosity. `minimal` suppresses repetitive Home Assistant health-check and polling requests (`GET /`, `GET /v1/models`). `full` logs everything. |
 
 ### Terminal
 
@@ -794,6 +814,14 @@ Paste this token when the UI prompts for authentication, or append it to the URL
 2. Check logs for `Starting web terminal (ttyd)` — if missing, the terminal is disabled
 3. If you see a port conflict error, change `terminal_port` to a different value
 
+### `web_fetch failed: fetch failed` / HTTP tool calls time out
+
+**Symptom**: OpenClaw's `web_fetch` tool (or any outbound HTTP call from a skill) fails with `fetch failed`.
+
+**Cause**: Node 22 uses `autoSelectFamily` which tries IPv6 first. Most HAOS VMs have IPv6 DNS resolution but no IPv6 egress, so connections time out before falling back to IPv4.
+
+**Fix**: Ensure `force_ipv4_dns` is **true** (default since v0.5.81). If you upgraded from an older version, the option may still be set to `false` — change it to `true` in **Settings → Add-ons → OpenClaw Assistant → Configuration** and restart.
+
 ### Telegram network errors (`TypeError: fetch failed` / `getUpdates` fails)
 
 If Telegram is configured but polling fails with network fetch errors:
@@ -803,7 +831,7 @@ If Telegram is configured but polling fails with network fetch errors:
    curl -4 https://api.telegram.org/bot<token>/getMe
    curl -6 https://api.telegram.org/bot<token>/getMe
    ```
-2. If IPv4 works but default/IPv6 fails, set add-on option `force_ipv4_dns: true` and restart.
+2. If IPv4 works but default/IPv6 fails, ensure add-on option `force_ipv4_dns` is `true` (default) and restart.
 3. Keep `channels.telegram.network.autoSelectFamily: false` (default on Node 22).
 4. If still failing, check host/VM IPv6 routing and DNS configuration.
 
