@@ -89,6 +89,8 @@ openclaw onboard
 
 This interactive wizard walks you through connecting your AI providers (OpenAI, Google, Anthropic, etc.) and basic configuration.
 
+> **Note (v0.5.54+)**: If onboarding triggers a gateway runtime restart, the add-on now keeps nginx/terminal alive and auto-recovers the runtime instead of restarting the whole container.
+
 Alternatively, for more granular control:
 
 ```sh
@@ -100,8 +102,10 @@ openclaw configure
 The gateway requires a token for authentication. To retrieve it:
 
 ```sh
-openclaw config get gateway.auth.token
+jq -r '.gateway.auth.token' /config/.openclaw/openclaw.json
 ```
+
+> **Note**: Since OpenClaw v2026.2.22+ `openclaw config get` redacts sensitive values (returns `openclaw_redacted`). Read the token directly from the config file with `jq` as shown above.
 
 Save this token — you'll need it to access the Gateway Web UI and for API integrations.
 
@@ -240,8 +244,10 @@ This means the browser is connecting over plain HTTP. **Solutions**:
 If the Gateway UI shows **Unauthorized**, re-check your token:
 
 ```sh
-openclaw config get gateway.auth.token
+jq -r '.gateway.auth.token' /config/.openclaw/openclaw.json
 ```
+
+> **Note**: Since OpenClaw v2026.2.22+ `openclaw config get` redacts sensitive values — use `jq` to read directly from the config file.
 
 ---
 
@@ -260,18 +266,20 @@ All options are set via **Settings → Apps/Add-ons → OpenClaw Assistant → C
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `gateway_mode` | `local` / `remote` | `local` | **local**: run gateway in this add-on. **remote**: connect to an external gateway |
+| `gateway_remote_url` | string | _(empty)_ | Remote gateway WebSocket URL used when `gateway_mode: remote` (example: `ws://192.168.1.20:18789` or `wss://gateway.example.com:443`) |
 | `gateway_bind_mode` | `loopback` / `lan` / `tailnet` | `loopback` | **loopback**: 127.0.0.1 only (secure). **lan**: all interfaces (LAN-accessible). **tailnet**: Tailscale interface only. Only applies when `gateway_mode` is `local` |
 | `gateway_port` | int | `18789` | Port for the gateway. Only applies when `gateway_mode` is `local` |
 | `access_mode` | `custom` / `local_only` / `lan_https` / `lan_reverse_proxy` / `tailnet_https` | `custom` | **Simplifies secure access setup.** `custom`: use individual settings (backward-compatible). `lan_https`: built-in HTTPS proxy for LAN (recommended for phones). `lan_reverse_proxy`: external reverse proxy. `tailnet_https`: Tailscale. `local_only`: Ingress only. See [Accessing the Gateway Web UI](#4-accessing-the-gateway-web-ui) |
-| `gateway_public_url` | string | _(empty)_ | Public URL for the "Open Gateway Web UI" button. Auto-constructed in `lan_https` mode if empty. Example: `https://192.168.1.119:18789` |
+| `gateway_public_url` | string | _(empty)_ | Public URL for the "Open Gateway Web UI" button. Auto-constructed in `lan_https` mode if empty. Example: `https://192.168.1.119:18789`. In newer versions this origin is also merged into `gateway.controlUi.allowedOrigins` to reduce reverse-proxy origin errors. |
 | `enable_openai_api` | bool | `false` | Enable the OpenAI-compatible `/v1/chat/completions` endpoint. Required for [Assist pipeline integration](#6c-assist-pipeline-integration-openai-api) |
 | `gateway_auth_mode` | `token` / `trusted-proxy` | `token` | Gateway auth mode. Use `trusted-proxy` when terminating HTTPS in a reverse proxy and forwarding trusted auth headers. |
 | `gateway_trusted_proxies` | string | _(empty)_ | Comma-separated trusted proxy IP/CIDR list used with `gateway_auth_mode: trusted-proxy`. |
-
-When `gateway_auth_mode: trusted-proxy` is used, the add-on sets `gateway.auth.trustedProxy.userHeader` to `x-forwarded-user` by default.
+| `gateway_additional_allowed_origins` | string | _(empty)_ | Comma-separated additional origins merged into `gateway.controlUi.allowedOrigins` in `lan_https` mode (example: `https://ha.example.com:8443,capacitor://localhost`). |
 | `force_ipv4_dns` | bool | `true` | Force IPv4-first DNS ordering for Node network calls. **Recommended ON** — most HAOS VMs lack IPv6 egress, causing `web_fetch` and Telegram timeouts. Set to `false` only if your network has working IPv6. |
 | `gateway_env_vars` | list of `{name, value}` | `[]` | Environment variables exported to the gateway process at startup. UI format: list entries with `name` and `value` (example: `name=OPENAI_API_KEY`, `value=sk-...`). Limits: max 50 vars, key length 255, value length 10000. Reserved runtime keys are blocked (for example `PATH`, `HOME`, `NODE_OPTIONS`, `NODE_PATH`, `OPENCLAW_*`, proxy vars). Legacy string/object formats are still accepted for backward compatibility. |
 | `nginx_log_level` | `full` / `minimal` | `minimal` | Nginx access log verbosity. `minimal` suppresses repetitive Home Assistant health-check and polling requests (`GET /`, `GET /v1/models`). `full` logs everything. |
+
+When `gateway_auth_mode: trusted-proxy` is used, the add-on sets `gateway.auth.trustedProxy.userHeader` to `x-forwarded-user` by default.
 
 ### Terminal
 
@@ -346,14 +354,12 @@ This is the most common setup — accessing the Gateway Web UI from a browser on
 If you have an OpenClaw gateway running on a different machine (e.g., a more powerful server), you can configure this add-on to connect to it instead of running its own.
 
 1. Set `gateway_mode`: **remote**
-2. In the add-on terminal, configure the remote gateway URL:
-   ```sh
-   openclaw config set gateway.url <remote-gateway-url>
-   ```
+2. Set `gateway_remote_url` in add-on configuration (example: `wss://gateway.example.com:443`)
 3. Restart the add-on
 
 When `gateway_mode` is `remote`:
 - The add-on does **not** start a local gateway process
+- The add-on writes `gateway.remote.url` from `gateway_remote_url` on startup
 - `gateway_bind_mode` and `gateway_port` are ignored
 - The terminal and landing page still work normally
 - You still need the remote gateway's auth token
@@ -449,7 +455,7 @@ openclaw config set gateway.http.endpoints.chatCompletions.enabled true
 1. Go to **Settings → Devices & Services → Add Integration**
 2. Search for **Extended OpenAI Conversation**
 3. Configure:
-   - **API Key**: your gateway token (`openclaw config get gateway.auth.token`)
+   - **API Key**: your gateway token — run `jq -r '.gateway.auth.token' /config/.openclaw/openclaw.json` in the terminal
    - **Base URL**: `http://127.0.0.1:18789/v1`
    - **API Version**: leave empty
    - **Organization**: leave empty
@@ -757,17 +763,15 @@ Go to **Settings → Add-ons → OpenClaw Assistant → Log** tab. Logs show sta
 
 **Cause**: OpenClaw v2026.2.21+ checks the browser's `Origin` header against an allow-list. When using the built-in HTTPS proxy (`lan_https`), the origin (`https://<ip>:<port>`) must be registered in `gateway.controlUi.allowedOrigins`.
 
-**Fix**: In **v0.5.78+** this is configured automatically on startup. If you still see the error:
-1. Restart the add-on (the startup script detects the LAN IP and sets the origins).
-2. If the IP has changed since you last started, restart again — the cert and origins are regenerated.
-3. **Manual override** (from the add-on terminal):
+**Fix**: In **v0.5.50+** defaults are configured automatically on startup. In **v0.5.54+**, the add-on now merges defaults with existing values and user extras.
+1. Restart the add-on (the startup script detects LAN IP and updates origins).
+2. If needed, set `gateway_additional_allowed_origins` in add-on configuration (comma-separated), then restart.
+3. If the IP has changed since you last started, restart again — the cert and defaults are refreshed.
+4. **Manual override** (advanced, from the add-on terminal):
    ```sh
    openclaw config set gateway.controlUi.allowedOrigins '["https://192.168.1.10:18789"]'
    ```
-   Replace the IP and port with your actual values, then restart the gateway:
-   ```sh
-   openclaw gateway restart
-   ```
+   Then restart the add-on to re-merge defaults + extras.
 
 ### "disconnected (1008): pairing required"
 
@@ -775,7 +779,7 @@ Go to **Settings → Add-ons → OpenClaw Assistant → Log** tab. Logs show sta
 
 **Cause**: OpenClaw v2026.2.21+ requires new devices to complete a pairing handshake before the Control UI WebSocket is accepted. Loopback connections are auto-approved (v2026.2.22 further improves this with loopback scope-upgrade auto-approval), but LAN connections (including those through the HTTPS proxy) require explicit approval.
 
-**Fix**: In **v0.5.80+** the add-on automatically sets `gateway.controlUi.dangerouslyDisableDeviceAuth: true` on startup when using `lan_https` mode. This bypasses per-device pairing — token authentication is still enforced.
+**Fix**: In **v0.5.50+** the add-on automatically sets `gateway.controlUi.dangerouslyDisableDeviceAuth: true` on startup when using `lan_https` mode. This bypasses per-device pairing — token authentication is still enforced.
 
 > **v2026.2.22 note:** The gateway now logs a security warning on startup when this flag is active. The warning is expected and harmless — run `openclaw security audit` for details.
 
@@ -803,10 +807,22 @@ Go to **Settings → Add-ons → OpenClaw Assistant → Log** tab. Logs show sta
 **Fix**: Get the correct token and use it:
 
 ```sh
-openclaw config get gateway.auth.token
+jq -r '.gateway.auth.token' /config/.openclaw/openclaw.json
 ```
 
+> **Note**: Since OpenClaw v2026.2.22+ `openclaw config get` redacts sensitive values (returns `openclaw_redacted`). Use `jq` to read the token directly from the config file.
+
 Paste this token when the UI prompts for authentication, or append it to the URL: `http://<ip>:18789/?token=<your-token>`
+
+### CLI shows unauthorized with `trusted_proxy_user_missing`
+
+**Symptom**: In add-on terminal, commands that open direct gateway WebSocket (for example some `openclaw status`/gateway probes) fail with unauthorized and logs mention `trusted_proxy_user_missing`.
+
+**Cause**: `gateway_auth_mode: trusted-proxy` expects identity headers from your reverse proxy. Direct local CLI connections are not proxied, so they may be rejected.
+
+**What to do**:
+- Keep `trusted-proxy` for browser traffic via your reverse proxy.
+- For local terminal workflows that require direct gateway auth, temporarily switch to `gateway_auth_mode: token` (or run via proxy path that injects trusted headers), then switch back if needed.
 
 ### Terminal not visible
 
@@ -820,7 +836,7 @@ Paste this token when the UI prompts for authentication, or append it to the URL
 
 **Cause**: Node 22 uses `autoSelectFamily` which tries IPv6 first. Most HAOS VMs have IPv6 DNS resolution but no IPv6 egress, so connections time out before falling back to IPv4.
 
-**Fix**: Ensure `force_ipv4_dns` is **true** (default since v0.5.81). If you upgraded from an older version, the option may still be set to `false` — change it to `true` in **Settings → Add-ons → OpenClaw Assistant → Configuration** and restart.
+**Fix**: Ensure `force_ipv4_dns` is **true** (default since v0.5.51). If you upgraded from an older version, the option may still be set to `false` — change it to `true` in **Settings → Add-ons → OpenClaw Assistant → Configuration** and restart.
 
 ### Telegram network errors (`TypeError: fetch failed` / `getUpdates` fails)
 
@@ -933,7 +949,7 @@ Yes. The add-on supports aarch64 (Raspberry Pi 4/5) and armv7 (Raspberry Pi 3). 
 OpenClaw supports multiple agent profiles. Configure them via `openclaw configure` or by editing `/config/.openclaw/openclaw.json`. The gateway serves all configured agents.
 
 **Can I use a remote gateway?**
-Yes. Set `gateway_mode` to `remote` and configure the remote gateway URL via `openclaw config set gateway.url <url>`. See [Remote Gateway Mode](#6b-remote-gateway-mode).
+Yes. Set `gateway_mode` to `remote` and set `gateway_remote_url` in add-on configuration. The add-on syncs it into OpenClaw config automatically. See [Remote Gateway Mode](#6b-remote-gateway-mode).
 
 **How do I change the AI model or provider?**
 Run `openclaw configure` in the terminal to reconfigure your AI providers, or edit `/config/.openclaw/openclaw.json` directly. You can use OpenAI, Google (Gemini), Anthropic (Claude), local models, and more.
