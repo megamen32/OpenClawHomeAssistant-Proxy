@@ -148,6 +148,26 @@ export XDG_CONFIG_HOME=/config
 mkdir -p /config/.openclaw /config/.openclaw/identity /config/clawd /config/keys /config/secrets
 
 # ------------------------------------------------------------------------------
+# Persist SSH identity/config across restarts and enforce a single SSH source.
+# Some tools still read /root/.ssh explicitly even when HOME=/config.
+# ------------------------------------------------------------------------------
+PERSISTENT_SSH_DIR="/config/.ssh"
+mkdir -p "$PERSISTENT_SSH_DIR"
+chmod 700 "$PERSISTENT_SSH_DIR" 2>/dev/null || true
+
+if [ -d /root/.ssh ] && [ ! -L /root/.ssh ]; then
+  # One-time migration of any existing keys/config from ephemeral root home.
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a /root/.ssh/ "$PERSISTENT_SSH_DIR/" 2>/dev/null || true
+  else
+    cp -a /root/.ssh/. "$PERSISTENT_SSH_DIR/" 2>/dev/null || true
+  fi
+fi
+
+rm -rf /root/.ssh
+ln -sfn "$PERSISTENT_SSH_DIR" /root/.ssh
+
+# ------------------------------------------------------------------------------
 # Sync built-in OpenClaw skills from image to persistent storage
 # On each startup, copy new/updated built-in skills so they survive rebuilds.
 # We sync them to /config/.openclaw/skills and symlink back.

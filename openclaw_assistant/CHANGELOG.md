@@ -2,6 +2,12 @@
 
 All notable changes to the OpenClaw Assistant Home Assistant Add-on will be documented in this file.
 
+## [0.5.55] - 2026-02-25
+
+### Fixed
+- Persist SSH keys/config across add-on restarts by enforcing `/root/.ssh -> /config/.ssh` symlink in startup.
+- Migrate existing ephemeral `/root/.ssh` content to `/config/.ssh` on startup before linking, so previously generated keys are not lost.
+
 ## [0.5.54] - 2026-02-25
 
 ### Changed
